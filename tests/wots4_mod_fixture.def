@@ -1,0 +1,3 @@
+EXPORTS
+    Wots4ModInitialize=_FixtureModInitialize@4
+    FixtureModState=_FixtureModState@0

@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: configure
+        run: cmake -S . -B build -A Win32
+
+      - name: build
+        run: cmake --build build --config Release
+
+      # ゲームの exe が要るテスト（needs_exe）は除く
+      - name: test
+        run: ctest --test-dir build -C Release -LE needs_exe --output-on-failure --timeout 300
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: game
+          path: build/game/

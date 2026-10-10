@@ -1,0 +1,36 @@
+name: Release
+
+# ModLoader（dinput8.dll）だけをリリースする。各 Mod は自分のリポジトリでリリースする。
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build and test
+        run: |
+          cmake -S . -B build -A Win32 -DWOTS4_BUILD_MODS=OFF
+          cmake --build build --config Release
+          ctest --test-dir build -C Release -LE needs_exe --output-on-failure --timeout 300
+
+      - name: zip を作る
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          cmake --install build --config Release --component loader --prefix stage
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path stage/* -DestinationPath "dist/wots4-modloader-$version.zip"
+          Get-ChildItem -Recurse stage
+
+      - name: Release を作る
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/*.zip --title "ModLoader ${{ github.ref_name }}" --generate-notes
