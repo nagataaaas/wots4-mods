@@ -31,9 +31,12 @@ ctest --test-dir build -C Release -LE needs_exe
 `local.mk.example` を `local.mk` にコピーし、`GAME_DIR` にゲームのフォルダを書きます（`local.mk` は Git で追跡しません）。
 
 ```bash
-make loader            # ModLoader をビルドして GAME_DIR へコピー
-make mod MOD=<名前>    # mods/<名前>/ の Mod をビルドして GAME_DIR/mods/<名前>/ へコピー
+make install               # ModLoader と mods/ のすべての Mod をビルドして GAME_DIR へコピー
+make install <名前> ...    # mods/<名前>/ の Mod だけをビルドして GAME_DIR/mods/<名前>/ へコピー
+make loader                # ModLoader だけをビルドして GAME_DIR へコピー
 ```
+
+- `make install <名前>` の名前には `loader` も書けます（例：`make install loader <名前>`）。
 
 - DLL は毎回上書きします。`config.ini` などは、ゲームのフォルダにすでにあれば上書きしません（ゲーム内で変えた設定を消さないため）。
 - ゲームを起動したままだと、読み込まれている DLL は上書きできません。
