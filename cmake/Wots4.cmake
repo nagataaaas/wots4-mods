@@ -111,6 +111,12 @@ function(wots4_add_mod name)
         RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/game/mods/${name}
         RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/game/mods/${name}
         RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}/game/mods/${name})
+    # build/game/mods/<NAME>/ を、ゲームのフォルダに置くときと同じ中身にする（make mod で使う）
+    if(MOD_FILES)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MOD_FILES} $<TARGET_FILE_DIR:${target}>
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    endif()
     if(MOD_NO_RELEASE)
         return()
     endif()

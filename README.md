@@ -26,6 +26,18 @@ ctest --test-dir build -C Release -LE needs_exe
 - 出力は `build/game/` に、ゲームのフォルダと同じ並びで置かれます（`dinput8.dll`、`mods/<名前>/mod.dll`）。
 - `mods/<名前>/` に Mod のソース（`CMakeLists.txt`）を置くと、一緒にビルドします。`mods/` は Git で追跡しません。
 
+### ゲームのフォルダへ入れる（make）
+
+`local.mk.example` を `local.mk` にコピーし、`GAME_DIR` にゲームのフォルダを書きます（`local.mk` は Git で追跡しません）。
+
+```bash
+make loader            # ModLoader をビルドして GAME_DIR へコピー
+make mod MOD=<名前>    # mods/<名前>/ の Mod をビルドして GAME_DIR/mods/<名前>/ へコピー
+```
+
+- DLL は毎回上書きします。`config.ini` などは、ゲームのフォルダにすでにあれば上書きしません（ゲーム内で変えた設定を消さないため）。
+- ゲームを起動したままだと、読み込まれている DLL は上書きできません。
+
 ### Mod の作り方
 
 [docs/MOD_API.md](docs/MOD_API.md) を見てください。

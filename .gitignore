@@ -13,6 +13,9 @@ CLAUDE.md
 TODO.md
 .ignore
 
+# 自分の環境の設定（Makefile が読む）
+local.mk
+
 # claude-code-runtime
 **/.claude/scheduled_tasks.lock
 **/.claude/scheduled_tasks.json
