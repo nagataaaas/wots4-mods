@@ -24,6 +24,15 @@ ModLoader（`dinput8.dll`）と Mod（`mod.dll`）のあいだの決まりです
 | failed       | DLL を読み込めなかった（Windows のエラー番号を記録する） |
 | duplicate    | 同じモジュールがすでに初期化されていた                   |
 
+`mod_loader.log` の例（`[ ]` の中は、ModLoader か、`log` を呼んだ Mod のフォルダ名）：
+
+```
+2026-10-11 20:02:43.360 [ModLoader] Mod を読み込みます: C:\...\Way of the Samurai 4\mods\
+2026-10-11 20:02:43.364 [example] example mod initialized
+2026-10-11 20:02:43.372 [ModLoader] mods\example\mod.dll: accepted
+2026-10-11 20:02:43.373 [ModLoader] mods\broken\mod.dll: failed（DLL を読み込めませんでした。Windows のエラー 193: ...）
+```
+
 ## 入口
 
 ```cpp

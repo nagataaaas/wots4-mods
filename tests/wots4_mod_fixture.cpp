@@ -19,6 +19,7 @@ static bool isValidContext(const wots4::ModContext* context) {
 extern "C" BOOL WINAPI FixtureModInitialize(const wots4::ModContext* context) {
     ++calls;
     if (!isValidContext(context)) return FALSE;
+    if (context->host->log) context->host->log(context->module, "fixture initializing");
 
     wchar_t path[32768];
     GetModuleFileNameW(context->module, path, ARRAYSIZE(path));
