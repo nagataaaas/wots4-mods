@@ -22,22 +22,28 @@ if(NOT TARGET wots4_sdk)
     add_library(wots4::sdk ALIAS wots4_sdk)
 endif()
 
+# DLL の出力先を、どの構成（Release・Debug など）でも <directory> そのものにする。
+# 指定しないと、Visual Studio のジェネレーターは <directory>/Release/ のように構成名のフォルダを足す。
+function(_wots4_set_runtime_output_directory target directory)
+    set_target_properties(${target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${directory})
+    foreach(config IN LISTS CMAKE_CONFIGURATION_TYPES)
+        string(TOUPPER ${config} config)
+        set_target_properties(${target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY_${config} ${directory})
+    endforeach()
+endfunction()
+
 # ModLoader（dinput8.dll）を作る。Mod を単体でビルドするときも、ModLoader 経由のテストに使える。
 #   wots4_add_loader([INSTALL])  INSTALL を付けると Release の zip に入れる（ModLoader のリポジトリだけ）
 function(wots4_add_loader)
-    cmake_parse_arguments(L "INSTALL" "" "" ${ARGN})
+    cmake_parse_arguments(ARG "INSTALL" "" "" ${ARGN})
     if(TARGET wots4_loader)
         return()
     endif()
     add_library(wots4_loader SHARED ${WOTS4_ROOT}/src/dinput8_proxy.cpp ${WOTS4_ROOT}/src/dinput8_proxy.def)
     target_link_libraries(wots4_loader PRIVATE wots4::sdk)
-    set_target_properties(wots4_loader PROPERTIES
-        OUTPUT_NAME dinput8
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/game
-        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/game
-        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/game
-        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}/game)
-    if(L_INSTALL)
+    set_target_properties(wots4_loader PROPERTIES OUTPUT_NAME dinput8)
+    _wots4_set_runtime_output_directory(wots4_loader ${CMAKE_BINARY_DIR}/game)
+    if(ARG_INSTALL)
         install(TARGETS wots4_loader RUNTIME DESTINATION . COMPONENT loader)
         install(FILES ${WOTS4_ROOT}/docs/INSTALL.md DESTINATION . RENAME README.md COMPONENT loader)
     endif()
@@ -101,48 +107,46 @@ endfunction()
 #   LICENSES : docs/licenses/ へ配布するファイル
 #   NO_RELEASE : まだ配布しない（Release の zip に入れない）
 function(wots4_add_mod name)
-    cmake_parse_arguments(MOD "NO_RELEASE" "DEF" "SOURCES;LIBS;FILES;LICENSES" ${ARGN})
+    cmake_parse_arguments(ARG "NO_RELEASE" "DEF" "SOURCES;LIBS;FILES;LICENSES" ${ARGN})
     set(target mod_${name})
-    add_library(${target} SHARED ${MOD_SOURCES} ${MOD_DEF})
-    target_link_libraries(${target} PRIVATE wots4::sdk ${MOD_LIBS})
-    set_target_properties(${target} PROPERTIES
-        OUTPUT_NAME mod
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/game/mods/${name}
-        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/game/mods/${name}
-        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/game/mods/${name}
-        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_BINARY_DIR}/game/mods/${name})
-    # build/game/mods/<NAME>/ を、ゲームのフォルダに置くときと同じ中身にする（make mod で使う）
-    if(MOD_FILES)
+    add_library(${target} SHARED ${ARG_SOURCES} ${ARG_DEF})
+    target_link_libraries(${target} PRIVATE wots4::sdk ${ARG_LIBS})
+    set_target_properties(${target} PROPERTIES OUTPUT_NAME mod)
+    _wots4_set_runtime_output_directory(${target} ${CMAKE_BINARY_DIR}/game/mods/${name})
+    # build/game/mods/<NAME>/ を、ゲームのフォルダに置くときと同じ中身にする（make install で使う）
+    if(ARG_FILES)
         add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MOD_FILES} $<TARGET_FILE_DIR:${target}>
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ARG_FILES} $<TARGET_FILE_DIR:${target}>
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     endif()
-    if(MOD_NO_RELEASE)
+    if(ARG_NO_RELEASE)
         return()
     endif()
     install(TARGETS ${target} RUNTIME DESTINATION mods/${name} COMPONENT ${name})
-    if(MOD_FILES)
-        install(FILES ${MOD_FILES} DESTINATION mods/${name} COMPONENT ${name})
+    if(ARG_FILES)
+        install(FILES ${ARG_FILES} DESTINATION mods/${name} COMPONENT ${name})
     endif()
-    if(MOD_LICENSES)
-        install(FILES ${MOD_LICENSES} DESTINATION mods/${name}/docs/licenses COMPONENT ${name})
+    if(ARG_LICENSES)
+        install(FILES ${ARG_LICENSES} DESTINATION mods/${name}/docs/licenses COMPONENT ${name})
     endif()
 endfunction()
 
 # テストを1つ足す。ゲームの exe が要るテストには NEEDS_EXE を付ける（CI では除外）。
-#   wots4_add_probe(<NAME> SOURCES ... [LIBS ...] [ARGS ...] [NEEDS_EXE] [LINK_OPTIONS ...])
+#   wots4_add_probe(<NAME> SOURCES ... [LIBS ...] [INCLUDES ...] [LINK_OPTIONS ...] [ARGS ...] [NEEDS_EXE])
+#   INCLUDES : インクルードするフォルダ
+#   ARGS     : テストを実行するときの引数
 function(wots4_add_probe name)
-    cmake_parse_arguments(P "NEEDS_EXE" "" "SOURCES;LIBS;ARGS;LINK_OPTIONS;INCLUDES" ${ARGN})
-    add_executable(${name} ${P_SOURCES})
-    target_link_libraries(${name} PRIVATE wots4::sdk ${P_LIBS})
-    if(P_INCLUDES)
-        target_include_directories(${name} PRIVATE ${P_INCLUDES})
+    cmake_parse_arguments(ARG "NEEDS_EXE" "" "SOURCES;LIBS;ARGS;LINK_OPTIONS;INCLUDES" ${ARGN})
+    add_executable(${name} ${ARG_SOURCES})
+    target_link_libraries(${name} PRIVATE wots4::sdk ${ARG_LIBS})
+    if(ARG_INCLUDES)
+        target_include_directories(${name} PRIVATE ${ARG_INCLUDES})
     endif()
-    if(P_LINK_OPTIONS)
-        target_link_options(${name} PRIVATE ${P_LINK_OPTIONS})
+    if(ARG_LINK_OPTIONS)
+        target_link_options(${name} PRIVATE ${ARG_LINK_OPTIONS})
     endif()
-    add_test(NAME ${name} COMMAND ${name} ${P_ARGS})
-    if(P_NEEDS_EXE)
+    add_test(NAME ${name} COMMAND ${name} ${ARG_ARGS})
+    if(ARG_NEEDS_EXE)
         set_tests_properties(${name} PROPERTIES LABELS needs_exe)
     endif()
 endfunction()
