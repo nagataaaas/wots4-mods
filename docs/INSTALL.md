@@ -1,27 +1,27 @@
-# 侍道4 Mod の入れ方
+# Installing Way of the Samurai 4 Mods
 
-対象は Steam 版の『侍道4』（`WayOfTheSamurai4.exe`）です。
+This is for the Steam version of Way of the Samurai 4 (`WayOfTheSamurai4.exe`).
 
-## 入れ方
+## Installing
 
-1. ゲームのフォルダを開きます。Steam のライブラリでゲームを右クリックし、「管理」→「ローカルファイルを閲覧」を選ぶと開けます。
-2. ModLoader の zip（`wots4-modloader-<版>.zip`）と、使いたい Mod の zip（`wots4-mod-<名前>-<版>.zip`）の中身を、`WayOfTheSamurai4.exe` と同じフォルダへコピーします。すると、次の並びになります。
+1. Open the game folder. In your Steam library, right-click the game and choose "Manage" → "Browse local files".
+2. Copy the contents of the ModLoader zip (`wots4-modloader-<version>.zip`) and of the zips of the Mods you want (`wots4-mod-<name>-<version>.zip`) into the folder that contains `WayOfTheSamurai4.exe`. The result looks like this:
 
 ```
 WayOfTheSamurai4.exe
 dinput8.dll              ← ModLoader
 mods/
-  <Mod の名前>/
+  <Mod name>/
     mod.dll
-    （Mod によっては config.ini など）
+    (config.ini etc., depending on the Mod)
 ```
 
-3. ゲームを起動します。ModLoader は `mods/<名前>/mod.dll` を順に読み込みます。
-   - 読み込んだ結果は、ゲームのフォルダの `mod_loader.log` に書き出されます。
+3. Start the game. The ModLoader loads each `mods/<name>/mod.dll` in turn.
+   - The results of loading are written to `mod_loader.log` in the game folder.
 
-## 外し方
+## Uninstalling
 
-- **一部の Mod だけ外す:** `mods/` の中の、その Mod のフォルダを消します。
-- **すべて外す:** `dinput8.dll` と `mods/` を消します。
+- **To remove some Mods:** delete those Mods' folders in `mods/`.
+- **To remove everything:** delete `dinput8.dll` and `mods/`.
 
-ModLoader も Mod も、ゲームのファイルとセーブデータは書き換えません。
+Neither the ModLoader nor the Mods modify the game files or save data.

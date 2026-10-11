@@ -1,9 +1,9 @@
-# このファイルを local.mk にコピーして、自分の環境に合わせて書き換える。
-# local.mk は Git で追跡しない（.gitignore）。
+# Copy this file to local.mk and edit it for your environment.
+# local.mk is not tracked by Git (.gitignore).
 
-# ゲームのフォルダ（WayOfTheSamurai4.exe があるところ）。スラッシュ区切りで書く
+# Game folder (where WayOfTheSamurai4.exe is). Use forward slashes
 GAME_DIR := C:/Program Files (x86)/Steam/steamapps/common/Way of the Samurai 4
 
-# cmake・ctest が PATH にないときは、場所を書く
+# If cmake or ctest is not on PATH, write their locations
 # CMAKE := C:/path/to/cmake.exe
 # CTEST := C:/path/to/ctest.exe

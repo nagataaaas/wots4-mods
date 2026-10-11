@@ -1,5 +1,7 @@
 # wots4-mods
 
+[English](README.en.md)
+
 Steam 版『侍道4』（Way of the Samurai 4）向けの ModLoader です。
 
 ゲームのフォルダに置く `dinput8.dll` で、ゲームが起動すると `mods/<名前>/mod.dll` を読み込みます。

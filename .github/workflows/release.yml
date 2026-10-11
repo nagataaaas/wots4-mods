@@ -1,6 +1,6 @@
 name: Release
 
-# ModLoader（dinput8.dll）だけをリリースする。各 Mod は自分のリポジトリでリリースする。
+# Release only the ModLoader (dinput8.dll). Each Mod is released from its own repository.
 on:
   push:
     tags: ["v*"]
@@ -20,7 +20,7 @@ jobs:
           cmake --build build --config Release
           ctest --test-dir build -C Release -LE needs_exe --output-on-failure --timeout 300
 
-      - name: zip を作る
+      - name: create zip
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}"
@@ -29,7 +29,7 @@ jobs:
           Compress-Archive -Path stage/* -DestinationPath "dist/wots4-modloader-$version.zip"
           Get-ChildItem -Recurse stage
 
-      - name: Release を作る
+      - name: create Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

@@ -1,10 +1,10 @@
-# 解析資料（解析ツール・解析した情報・exe など）はコミットしない
+# Do not commit analysis material (analysis tools, analyzed information, exe, etc.)
 /research/
 
-# Mod はそれぞれのリポジトリで扱う。ここでは手元でまとめてビルドするために置くだけ
+# Each Mod lives in its own repository. They are placed here only to build them together locally
 /mods/
 
-# AI まわり
+# AI tooling
 AGENTS.md
 CLAUDE.md
 .claude
@@ -13,7 +13,7 @@ CLAUDE.md
 TODO.md
 .ignore
 
-# 自分の環境の設定（Makefile が読む）
+# Local environment settings (read by the Makefile)
 local.mk
 
 # claude-code-runtime
@@ -28,7 +28,7 @@ local.mk
 **/.claude/first-run
 **/.claude/assistant-daemon-state.json
 
-# ビルドの出力
+# Build output
 build/
 out/
 stage/
@@ -43,11 +43,11 @@ dist/
 *.exe
 __pycache__/
 
-# ログ
+# Logs
 logs
 *.log
 
-# エディタ
+# Editors
 *.local
 .vscode/*
 !.vscode/extensions.json

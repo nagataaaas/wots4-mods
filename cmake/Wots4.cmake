@@ -1,11 +1,11 @@
-# wots4-mods の共通ビルド設定。
-# ModLoader（このリポジトリ）と各 Mod の両方から include する。
-# Mod を単体でビルドするときは -DWOTS4_SDK_DIR=<wots4-mods のパス> を渡す。
+# Shared build settings for wots4-mods.
+# Included by both the ModLoader (this repository) and each Mod.
+# When building a Mod standalone, pass -DWOTS4_SDK_DIR=<path to wots4-mods>.
 include_guard(GLOBAL)
 include(FetchContent)
 
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
-    message(FATAL_ERROR "侍道4 は 32bit のゲームです。-A Win32 を付けて configure してください。")
+    message(FATAL_ERROR "Way of the Samurai 4 is a 32-bit game. Configure with -A Win32.")
 endif()
 
 set(WOTS4_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." CACHE INTERNAL "")
@@ -15,15 +15,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options(/utf-8 $<$<COMPILE_LANGUAGE:CXX>:/EHsc>)
 add_compile_definitions(UNICODE _UNICODE)
 
-# Mod SDK（Mod API のヘッダー）
+# Mod SDK (Mod API headers)
 if(NOT TARGET wots4_sdk)
     add_library(wots4_sdk INTERFACE)
     target_include_directories(wots4_sdk INTERFACE "${WOTS4_ROOT}/include")
     add_library(wots4::sdk ALIAS wots4_sdk)
 endif()
 
-# DLL の出力先を、どの構成（Release・Debug など）でも <directory> そのものにする。
-# 指定しないと、Visual Studio のジェネレーターは <directory>/Release/ のように構成名のフォルダを足す。
+# Put the DLL in <directory> itself for every configuration (Release, Debug, etc.).
+# Otherwise the Visual Studio generator adds a folder named after the configuration, such as <directory>/Release/.
 function(_wots4_set_runtime_output_directory target directory)
     set_target_properties(${target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${directory})
     foreach(config IN LISTS CMAKE_CONFIGURATION_TYPES)
@@ -32,8 +32,8 @@ function(_wots4_set_runtime_output_directory target directory)
     endforeach()
 endfunction()
 
-# ModLoader（dinput8.dll）を作る。Mod を単体でビルドするときも、ModLoader 経由のテストに使える。
-#   wots4_add_loader([INSTALL])  INSTALL を付けると Release の zip に入れる（ModLoader のリポジトリだけ）
+# Build the ModLoader (dinput8.dll). Also usable for tests through the ModLoader when building a Mod standalone.
+#   wots4_add_loader([INSTALL])  INSTALL puts it in the Release zip (ModLoader repository only)
 function(wots4_add_loader)
     cmake_parse_arguments(ARG "INSTALL" "" "" ${ARGN})
     if(TARGET wots4_loader)
@@ -49,7 +49,7 @@ function(wots4_add_loader)
     endif()
 endfunction()
 
-# 依存はハッシュを固定して取得する。SOURCE_SUBDIR _no_cmake で、依存側の CMakeLists は使わない。
+# Dependencies are fetched with pinned hashes. SOURCE_SUBDIR _no_cmake keeps the dependencies' own CMakeLists from being used.
 function(wots4_use_minhook)
     if(TARGET wots4_minhook)
         return()
@@ -101,11 +101,11 @@ function(wots4_use_nlohmann_json)
     target_include_directories(wots4_nlohmann_json SYSTEM INTERFACE ${include_dir})
 endfunction()
 
-# Mod を1つ作る。出力は mods/<NAME>/mod.dll。
+# Build one Mod. The output is mods/<NAME>/mod.dll.
 #   wots4_add_mod(<NAME> SOURCES ... [DEF file.def] [LIBS ...] [FILES ...] [LICENSES ...] [NO_RELEASE])
-#   FILES    : mod.dll と同じフォルダへ配布するファイル（config.ini など）
-#   LICENSES : docs/licenses/ へ配布するファイル
-#   NO_RELEASE : まだ配布しない（Release の zip に入れない）
+#   FILES    : files distributed in the same folder as mod.dll (config.ini, etc.)
+#   LICENSES : files distributed in docs/licenses/
+#   NO_RELEASE : not distributed yet (not put in the Release zip)
 function(wots4_add_mod name)
     cmake_parse_arguments(ARG "NO_RELEASE" "DEF" "SOURCES;LIBS;FILES;LICENSES" ${ARGN})
     set(target mod_${name})
@@ -113,7 +113,7 @@ function(wots4_add_mod name)
     target_link_libraries(${target} PRIVATE wots4::sdk ${ARG_LIBS})
     set_target_properties(${target} PROPERTIES OUTPUT_NAME mod)
     _wots4_set_runtime_output_directory(${target} ${CMAKE_BINARY_DIR}/game/mods/${name})
-    # build/game/mods/<NAME>/ を、ゲームのフォルダに置くときと同じ中身にする（make install で使う）
+    # Make build/game/mods/<NAME>/ hold the same contents as in the game folder (used by make install)
     if(ARG_FILES)
         add_custom_command(TARGET ${target} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ARG_FILES} $<TARGET_FILE_DIR:${target}>
@@ -131,10 +131,10 @@ function(wots4_add_mod name)
     endif()
 endfunction()
 
-# テストを1つ足す。ゲームの exe が要るテストには NEEDS_EXE を付ける（CI では除外）。
+# Add one test. Mark tests that need the game exe with NEEDS_EXE (excluded in CI).
 #   wots4_add_probe(<NAME> SOURCES ... [LIBS ...] [INCLUDES ...] [LINK_OPTIONS ...] [ARGS ...] [NEEDS_EXE])
-#   INCLUDES : インクルードするフォルダ
-#   ARGS     : テストを実行するときの引数
+#   INCLUDES : include directories
+#   ARGS     : arguments passed when running the test
 function(wots4_add_probe name)
     cmake_parse_arguments(ARG "NEEDS_EXE" "" "SOURCES;LIBS;ARGS;LINK_OPTIONS;INCLUDES" ${ARGN})
     add_executable(${name} ${ARG_SOURCES})

@@ -18,7 +18,7 @@ jobs:
       - name: build
         run: cmake --build build --config Release
 
-      # ゲームの exe が要るテスト（needs_exe）は除く
+      # Exclude tests that need the game exe (needs_exe)
       - name: test
         run: ctest --test-dir build -C Release -LE needs_exe --output-on-failure --timeout 300
 

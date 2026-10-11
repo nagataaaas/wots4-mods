@@ -1,4 +1,4 @@
-// Mod の入口。ModLoader から一度だけ呼ばれる。TRUE を返すと受け入れ、FALSE を返すと断る。
+// Mod entry point. Called once by the ModLoader. Return TRUE to accept, FALSE to refuse.
 #include <wots4/mod_api.h>
 
 extern "C" BOOL WINAPI ModInitialize(const wots4::ModContext* context) {

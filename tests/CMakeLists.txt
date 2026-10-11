@@ -1,4 +1,4 @@
-# ModLoader のテスト。ゲームは使わず、テスト用の Mod を並べたフォルダで確かめる。
+# ModLoader tests. They do not use the game; they check against a folder of test Mods.
 add_library(test_fixture_mod SHARED wots4_mod_fixture.cpp wots4_mod_fixture.def)
 target_link_libraries(test_fixture_mod PRIVATE wots4::sdk)
 
@@ -12,7 +12,7 @@ add_executable(wots4_mod_loader_probe wots4_mod_loader_probe.cpp)
 target_include_directories(wots4_mod_loader_probe PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(wots4_mod_loader_probe PRIVATE wots4::sdk)
 
-# 通常の import で exe の隣の dinput8.dll（ModLoader）が読み込まれることを確かめる
+# Check that a normal import loads the dinput8.dll (ModLoader) next to the exe
 add_executable(wots4_multi_autoload_probe wots4_multi_autoload_probe.cpp)
 target_link_libraries(wots4_multi_autoload_probe PRIVATE dinput8.lib dxguid.lib)
 
@@ -27,7 +27,7 @@ add_test(NAME loader_tree_setup COMMAND ${CMAKE_COMMAND}
     -P ${CMAKE_CURRENT_SOURCE_DIR}/make_loader_tree.cmake)
 set_tests_properties(loader_tree_setup PROPERTIES FIXTURES_SETUP loader_tree)
 
-# プローブはパスを Windows の区切り（\）で比べるので、ネイティブのパスで渡す
+# The probe compares paths with Windows separators (\), so pass a native path
 file(TO_NATIVE_PATH ${tree} tree_native)
 add_test(NAME wots4_mod_loader_probe COMMAND wots4_mod_loader_probe ${tree_native})
 add_test(NAME wots4_multi_autoload_probe COMMAND ${tree}/wots4_multi_autoload_probe.exe)

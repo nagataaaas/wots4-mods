@@ -1,12 +1,12 @@
-# ビルドした ModLoader または Mod を、ゲームのフォルダへコピーする（Makefile から呼ぶ）。
-#   -DSRC=<コピー元のフォルダ> -DDEST=<コピー先のフォルダ> [-DONLY=<ファイル名>] -P deploy.cmake
-# DLL は毎回上書きする。それ以外（config.ini など）は、コピー先にすでにあれば上書きしない
-# （ゲーム内で変えた設定を消さないため）。
+# Copy a built ModLoader or Mod to the game folder (called from the Makefile).
+#   -DSRC=<source folder> -DDEST=<destination folder> [-DONLY=<file name>] -P deploy.cmake
+# DLLs are always overwritten. Other files (config.ini, etc.) are not overwritten if they already exist
+# at the destination (so settings changed in game are kept).
 file(TO_CMAKE_PATH "${SRC}" SRC)
 file(TO_CMAKE_PATH "${DEST}" DEST)
-get_filename_component(SRC "${SRC}" ABSOLUTE)  # file(GLOB) は相対パスだと何も見つけない
+get_filename_component(SRC "${SRC}" ABSOLUTE)  # file(GLOB) finds nothing with a relative path
 if(NOT IS_DIRECTORY "${SRC}")
-    message(FATAL_ERROR "コピー元がありません: ${SRC}")
+    message(FATAL_ERROR "Source folder not found: ${SRC}")
 endif()
 if(NOT IS_DIRECTORY "${DEST}")
     file(MAKE_DIRECTORY "${DEST}")
@@ -17,7 +17,7 @@ else()
     file(GLOB files RELATIVE "${SRC}" "${SRC}/*")
 endif()
 if(NOT files)
-    message(FATAL_ERROR "コピーするファイルがありません: ${SRC}")
+    message(FATAL_ERROR "No files to copy: ${SRC}")
 endif()
 foreach(name IN LISTS files)
     set(from "${SRC}/${name}")
@@ -25,19 +25,19 @@ foreach(name IN LISTS files)
         continue()
     endif()
     if(NOT EXISTS "${from}")
-        message(FATAL_ERROR "ビルドしたファイルがありません: ${from}")
+        message(FATAL_ERROR "Built file not found: ${from}")
     endif()
     set(to "${DEST}/${name}")
     if(name MATCHES "\\.dll$")
         file(COPY_FILE "${from}" "${to}" RESULT result)
         if(result)
-            message(FATAL_ERROR "コピーできません（ゲームが起動していませんか）: ${to}\n${result}")
+            message(FATAL_ERROR "Cannot copy (is the game running?): ${to}\n${result}")
         endif()
-        message(STATUS "コピーしました: ${to}")
+        message(STATUS "Copied: ${to}")
     elseif(EXISTS "${to}")
-        message(STATUS "すでにあるので上書きしませんでした（設定を残すため）: ${to}")
+        message(STATUS "Already exists, not overwritten (to keep settings): ${to}")
     else()
         file(COPY_FILE "${from}" "${to}")
-        message(STATUS "コピーしました: ${to}")
+        message(STATUS "Copied: ${to}")
     endif()
 endforeach()
