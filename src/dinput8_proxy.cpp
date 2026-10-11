@@ -91,15 +91,16 @@ void WINAPI hostLog(HMODULE owner, const char* message) {
     writeLog(ownerName(owner).c_str(), message);
 }
 
-// "Windows のエラー 193: %1 は有効な Win32 アプリケーションではありません。"
+// "Windows error 193: %1 is not a valid Win32 application."
+// The log is English only. Without the English system messages, only the number is written.
 std::string windowsErrorText(DWORD error) {
     char number[48];
-    sprintf_s(number, "Windows のエラー %lu", error);
+    sprintf_s(number, "Windows error %lu", error);
     std::string result = number;
     wchar_t* text = nullptr;
     DWORD length = FormatMessageW(
         FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        nullptr, error, 0, reinterpret_cast<LPWSTR>(&text), 0, nullptr);
+        nullptr, error, MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), reinterpret_cast<LPWSTR>(&text), 0, nullptr);
     while (length && (text[length - 1] == L'\r' || text[length - 1] == L'\n' || text[length - 1] == L' '))
         --length;
     if (length) result += ": " + toUtf8(text, static_cast<int>(length));
@@ -110,23 +111,23 @@ std::string windowsErrorText(DWORD error) {
 // Why a Mod was not accepted, in the words of docs/MOD_API.md.
 const char* notAcceptedReason(wots4::LoadState state) {
     switch (state) {
-    case wots4::LoadState::refused: return "Wots4ModInitialize が FALSE を返しました";
-    case wots4::LoadState::missingEntry: return "mod.dll に Wots4ModInitialize がありません";
-    case wots4::LoadState::failed: return "DLL を読み込めませんでした";
-    case wots4::LoadState::duplicate: return "同じモジュールがすでに初期化されていました";
+    case wots4::LoadState::refused: return "Wots4ModInitialize returned FALSE";
+    case wots4::LoadState::missingEntry: return "mod.dll does not export Wots4ModInitialize";
+    case wots4::LoadState::failed: return "could not load the DLL";
+    case wots4::LoadState::duplicate: return "the same module was already initialized";
     default: return nullptr;
     }
 }
 
 // "mods\a\mod.dll: accepted"
-// "mods\b\mod.dll: failed（DLL を読み込めませんでした。Windows のエラー 193: ...）"
+// "mods\b\mod.dll: failed (could not load the DLL; Windows error 193: ...)"
 void logLoadResult(const wots4::LoadResult& result) {
     std::string line = toUtf8(relativeToLoader(result.path)) + ": " + wots4::loadStateName(result.state);
     if (const char* reason = notAcceptedReason(result.state)) {
-        line += "（";
+        line += " (";
         line += reason;
-        if (result.state == wots4::LoadState::failed) line += "。" + windowsErrorText(result.error);
-        line += "）";
+        if (result.state == wots4::LoadState::failed) line += "; " + windowsErrorText(result.error);
+        line += ")";
     }
     writeLog("ModLoader", line);
 }
@@ -151,9 +152,9 @@ void loadModsOnce() {
     logPath = loaderDirectory + L"mod_loader.log";
     wots4::pinModule(selfModule);
 
-    writeLog("ModLoader", "Mod を読み込みます: " + toUtf8(loaderDirectory) + "mods\\");
+    writeLog("ModLoader", "loading Mods from " + toUtf8(loaderDirectory) + "mods\\");
     std::vector<wots4::LoadResult> results = wots4::loadMods(loaderDirectory, selfModule, &hostApi);
-    if (results.empty()) writeLog("ModLoader", "mods\\<名前>\\mod.dll が1つもありません");
+    if (results.empty()) writeLog("ModLoader", "no mods\\<name>\\mod.dll found");
     for (const wots4::LoadResult& result : results) logLoadResult(result);
 }
 

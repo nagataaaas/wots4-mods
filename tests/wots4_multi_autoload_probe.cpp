@@ -67,8 +67,9 @@ int wmain() {
         fclose(file);
     }
     const char* expectedLines[] = {"[ModLoader] mods\\a_first\\mod.dll: accepted\r\n",
-        "[ModLoader] mods\\b_refused\\mod.dll: refused（", "[ModLoader] mods\\invalid\\mod.dll: failed（",
-        "[ModLoader] mods\\missing_entry\\mod.dll: missingEntry（",
+        "[ModLoader] mods\\b_refused\\mod.dll: refused (Wots4ModInitialize returned FALSE)\r\n",
+        "[ModLoader] mods\\invalid\\mod.dll: failed (could not load the DLL; Windows error 193",
+        "[ModLoader] mods\\missing_entry\\mod.dll: missingEntry (mod.dll does not export Wots4ModInitialize)\r\n",
         "[a_first] fixture initializing\r\n", "[z_last] fixture initializing\r\n"};
     for (const char* expected : expectedLines) {
         if (log.find(expected) == std::string::npos) {
