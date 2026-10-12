@@ -31,6 +31,7 @@ struct OptionText {
 
 struct OptionsItemDefinition {
     OptionKind kind;
+    uint32_t defaultValue;
     OptionText label;
     std::vector<OptionText> choices;
     std::vector<const wchar_t*> choicePointers;  // Into choices; the game keeps these pointers
@@ -105,6 +106,7 @@ inline const char* optionItemProblem(const OptionItem& item) {
         return "a choice item needs 2 to 10 choices";
     if (item.kind != optionToggle && item.kind != optionChoice) return "an item has an unknown kind";
     if (!item.choices) return "an item has no choices";
+    if (item.defaultValue >= item.choiceCount) return "an item's default value is not one of its choices";
     for (uint32_t i = 0; i < item.choiceCount; ++i) {
         if (!isValidText(item.choices[i], maxOptionTextChars))
             return "a choice is missing in a language, empty, or longer than 127 characters";
@@ -128,7 +130,7 @@ inline const char* optionsPageProblem(const LocalizedText* title, const OptionIt
 }
 
 inline OptionsItemDefinition copyOptionItem(const OptionItem& item) {
-    OptionsItemDefinition copy{item.kind, copyText(item.label), {}, {}};
+    OptionsItemDefinition copy{item.kind, item.defaultValue, copyText(item.label), {}, {}};
     for (uint32_t i = 0; i < item.choiceCount; ++i) copy.choices.push_back(copyText(item.choices[i]));
     return copy;
 }

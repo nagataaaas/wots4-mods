@@ -79,9 +79,9 @@ constexpr int32_t noCursor = -1;               // No item is selected
 
 // Page vtable slots this file replaces (byte offsets).
 constexpr uint32_t buildItemsSlot = 0x3c;
-constexpr uint32_t pageSpecificSlotA = 0x40;  // Used by the game's own pages; ours do nothing
+constexpr uint32_t resetItemsSlot = 0x40;    // The 初期設定に戻す button; refreshItemsSlot follows
 constexpr uint32_t refreshItemsSlot = 0x44;
-constexpr uint32_t pageSpecificSlotB = 0x48;
+constexpr uint32_t pageSpecificSlotB = 0x48;  // Used by the game's own pages when leaving; ours do nothing
 constexpr uint32_t itemChangedSlot = 0x58;
 constexpr uint32_t initializeSlot = 0x04;
 constexpr uint32_t updateSlot = 0x08;
@@ -487,18 +487,37 @@ void __fastcall refreshItemsMethod(void* page, void*) {
     }
 }
 
+// The value the item shows, as read and changed take it.
+uint32_t shownValue(uint8_t* item, OptionKind kind) {
+    if (kind == optionToggle) return item[itemToggleState];
+    return field<uint32_t>(item, itemChoiceIndex);
+}
+
 uint32_t __fastcall itemChangedMethod(void* page, void*, void* item) {
     const PageExtension& extension = extensionOf(page);
     const OptionsPageDefinition& definition = definitionOf(page);
     uint8_t* const* items = itemsOf(page);
     for (uint32_t i = 0; i < extension.itemCount; ++i) {
         if (items[i] != item) continue;
-        const bool toggle = definition.items[i].kind == optionToggle;
-        const uint32_t value = toggle ? items[i][itemToggleState] : field<uint32_t>(item, itemChoiceIndex);
-        definition.callbacks.changed(definition.callbacks.context, i, value);
+        definition.callbacks.changed(definition.callbacks.context, i, shownValue(items[i], definition.items[i].kind));
         return 1;
     }
     return 0;
+}
+
+// The game's own pages write their defaults to the settings here. The Mod gets
+// each item that is not at its default as a change; the refresh that follows
+// reads the values back from the Mod.
+void __fastcall resetItemsMethod(void* page, void*) {
+    const PageExtension& extension = extensionOf(page);
+    const OptionsPageDefinition& definition = definitionOf(page);
+    if (!extension.built) return;
+    uint8_t* const* items = itemsOf(page);
+    for (uint32_t i = 0; i < extension.itemCount; ++i) {
+        const OptionsItemDefinition& item = definition.items[i];
+        if (shownValue(items[i], item.kind) == item.defaultValue) continue;
+        definition.callbacks.changed(definition.callbacks.context, i, item.defaultValue);
+    }
 }
 
 // ---------------------------------------------------------------- scrolling pages
@@ -836,7 +855,7 @@ void prepareModPageMethods() {
     baseDraw = reinterpret_cast<PageDraw>(modPageMethods[drawSlot / sizeof(uintptr_t)]);
     baseInput = reinterpret_cast<PageInput>(modPageMethods[inputSlot / sizeof(uintptr_t)]);
     replaceMethod(modPageMethods, buildItemsSlot, buildItemsMethod);
-    replaceMethod(modPageMethods, pageSpecificSlotA, noPageWork);
+    replaceMethod(modPageMethods, resetItemsSlot, resetItemsMethod);
     replaceMethod(modPageMethods, refreshItemsSlot, refreshItemsMethod);
     replaceMethod(modPageMethods, pageSpecificSlotB, noPageWork);
     replaceMethod(modPageMethods, itemChangedSlot, itemChangedMethod);

@@ -32,7 +32,7 @@ LocalizedText inBoth(const wchar_t* text) {
 const LocalizedText onOff[] = {inBoth(L"On"), inBoth(L"Off")};
 const LocalizedText levels[] = {inBoth(L"Easy"), inBoth(L"Normal"), inBoth(L"Hard"), inBoth(L"Any")};
 const OptionItem toggle{optionToggle, inBoth(L"Connect"), onOff, 2};
-const OptionItem level{optionChoice, inBoth(L"Level"), levels, 4};
+const OptionItem level{optionChoice, inBoth(L"Level"), levels, 4, 1};
 
 BOOL addPage(HMODULE mod, const wchar_t* title, const OptionItem* items, uint32_t count,
     const OptionsPageCallbacks* pageCallbacks = &callbacks) {
@@ -60,6 +60,7 @@ void checkPageLimits() {
     const auto& copied = hostRegistry.pages[0].items[1];
     check("choice pointers point into the copy", copied.choicePointers.size() == 4 &&
         copied.choicePointers[2] == copied.choices[2].text.c_str());
+    check("the default values are copied", hostRegistry.pages[0].items[0].defaultValue == 0 && copied.defaultValue == 1);
 
     check("no items refused", !addPage(mod, L"Empty", items, 0, &callbacks));
     const std::vector<OptionItem> manyItems(100, toggle);
@@ -89,6 +90,12 @@ void checkPageLimits() {
     check("10 choices accepted", addPage(mod, L"C10", &tenChoices, 1, &callbacks));
     check("11 choices refused", !addPage(mod, L"C11", &elevenChoices, 1, &callbacks));
     check("1 choice refused", !addPage(mod, L"C1", &oneChoice, 1, &callbacks));
+    OptionItem lastDefault{optionChoice, inBoth(L"Last"), levels, 4, 3};
+    OptionItem defaultPastChoices{optionChoice, inBoth(L"Past"), levels, 4, 4};
+    OptionItem toggleDefaultTwo{optionToggle, inBoth(L"Two"), onOff, 2, 2};
+    check("the last choice as the default accepted", addPage(mod, L"D3", &lastDefault, 1, &callbacks));
+    check("a default past the choices refused", !addPage(mod, L"D4", &defaultPastChoices, 1, &callbacks));
+    check("a toggle default other than 0 or 1 refused", !addPage(mod, L"D2", &toggleDefaultTwo, 1, &callbacks));
     OptionItem slider{static_cast<OptionKind>(1), inBoth(L"Slider"), onOff, 2};
     check("unknown item kind refused", !addPage(mod, L"K", &slider, 1, &callbacks));
     const LocalizedText withNull[] = {inBoth(L"On"), {nullptr, nullptr}};

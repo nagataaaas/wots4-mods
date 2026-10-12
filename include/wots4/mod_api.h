@@ -50,6 +50,7 @@ struct OptionItem {
     LocalizedText label;
     const LocalizedText* choices;
     uint32_t choiceCount;
+    uint32_t defaultValue;  // The value the page's 初期設定に戻す button sets, like the values of read
 };
 
 // Called on the game thread. values has one entry per item, in the order of addOptionsPage.

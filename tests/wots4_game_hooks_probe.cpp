@@ -576,7 +576,7 @@ void registerMods() {
     const LocalizedText onOff[] = {{L"はい", L"Yes"}, {L"いいえ", L"No"}};
     const LocalizedText levels[] = {{L"低", L"Low"}, {L"中", L"Mid"}, {L"高", L"High"}, {L"全", L"Any"}};
     const OptionItem itemsA[] = {
-        {optionToggle, localizedGameText(502), onOff, 2}, {optionChoice, {L"段階", L"Level"}, levels, 4}};
+        {optionToggle, localizedGameText(502), onOff, 2, 0}, {optionChoice, {L"段階", L"Level"}, levels, 4, 1}};
     const OptionItem itemsB[] = {
         {optionToggle, {L"表示", L"Show"}, onOff, 2}, {optionChoice, {L"大きさ", L"Size"}, levels, 3}};
     const OptionsPageCallbacks callbacksA{&modA, readValues, valueChanged};
@@ -679,6 +679,11 @@ void checkTitleScreen() {
     check("changed: toggle reports 0 or 1", changed(pageA, toggleA) == 1 && modA.lastItem == 0 && modA.lastValue == 0);
     uint8_t stranger[itemSize] = {};
     check("changed: another item is not reported", changed(pageA, stranger) == 0 && modA.changes == 2);
+
+    // The toggle shows 0, its default; the choice shows 3, its default is 1.
+    reinterpret_cast<void(__thiscall*)(void*)>(virtualMethod(pageA, resetItemsSlot))(pageA);
+    check("reset: only the item away from its default is reported, with the default",
+        modA.changes == 3 && modA.lastItem == 1 && modA.lastValue == 1);
 
     const unsigned destroyedBefore = pagesDestroyed;
     callAt(0x676050, {0, address(parent)});
@@ -911,6 +916,11 @@ void checkScrollingPage() {
     itemsOf(page)[10][itemToggleState] = 1;
     check("scrolling: a change of item 10 is reported as item 10",
         changed(page, itemsOf(page)[10]) == 1 && modC.lastItem == 10 && modC.lastValue == 1);
+    // Items 0, 2 (from read) and 10 are on; every default is off.
+    const unsigned changesBefore = modC.changes;
+    reinterpret_cast<void(__thiscall*)(void*)>(virtualMethod(page, resetItemsSlot))(page);
+    check("scrolling: reset reports the 3 items that are on, item 10 last, off",
+        modC.changes == changesBefore + 3 && modC.lastItem == 10 && modC.lastValue == 0);
 
     const unsigned destroyedBefore = pagesDestroyed;
     destroyGameObject(page);
