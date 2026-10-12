@@ -1,4 +1,4 @@
-# Mod API (v1)
+# Mod API (v2)
 
 The contract between the ModLoader (`dinput8.dll`) and Mods (`mod.dll`). The header is [include/wots4/mod_api.h](../include/wots4/mod_api.h).
 
@@ -53,7 +53,7 @@ Contents of `ModContext`:
 
 | Member            | Description                                                                                                    |
 | ----------------- | -------------------------------------------------------------------------------------------------------------- |
-| `size`, `version` | Size of the struct and API version (`wots4::modApiVersion` = 1). Return FALSE if they do not match             |
+| `size`, `version` | Size of the struct and API version (`wots4::modApiVersion` = 2). Return FALSE if they do not match             |
 | `loader`          | The ModLoader's module                                                                                         |
 | `module`          | This Mod's module                                                                                              |
 | `game`            | The game exe's module (ASLR is enabled, so treat addresses as relative to this)                                |
@@ -62,15 +62,60 @@ Contents of `ModContext`:
 
 ## ModLoader functions (`HostApi`)
 
-| Function                        | Description                                                                              |
-| ------------------------------- | ---------------------------------------------------------------------------------------- |
-| `log(owner, message)`           | Writes one line to `mod_loader.log`                                                      |
-| `claim(owner, address, length)` | Reserves a range of bytes to be patched by a hook. Returns FALSE if it overlaps another Mod's reservation |
-| `releaseClaims(owner)`          | Releases all of that Mod's reservations                                                  |
+| Function                                                 | Description                                                                              |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `log(owner, message)`                                    | Writes one line to `mod_loader.log`                                                      |
+| `claim(owner, address, length)`                          | Reserves a range of bytes to be patched by a hook. Returns FALSE if it overlaps another reservation |
+| `releaseClaims(owner)`                                   | Releases all of that Mod's reservations                                                  |
+| `addOptionsPage(owner, title, items, count, callbacks)`  | Adds a page to the game's options (below)                                                |
+| `onFrame(owner, callback, context)`                      | Calls `callback(context)` once per game frame, after the game's update                   |
+| `onOptionsSaved(owner, callback, context)`               | Calls `callback(context)` after the game wrote its options to `S4-SETTINGS.ini`          |
 
 - `claim` only reserves. The Mod does the patching itself (MinHook, etc.).
 - Call `claim` and `releaseClaims` from the same thread as initialization (the game's thread).
+- `addOptionsPage`, `onFrame` and `onOptionsSaved` are accepted only inside `Wots4ModInitialize`. They return FALSE if the arguments are outside the limits below, or if this version of the game is not supported (the reason is written to `mod_loader.log`). If the Mod then returns FALSE from `Wots4ModInitialize`, the ModLoader forgets what it registered.
+- The ModLoader itself hooks the options menus, the frame update and the options save. It reserves those ranges with `claim` before the Mods initialize, so a Mod cannot hook them directly; use these functions instead. Several Mods can use them at the same time.
+- Callbacks run on the game's thread. `onFrame` runs every frame: avoid file I/O, memory allocation and locks there.
 - This ABI does not pass STL types.
+
+## Options pages
+
+`addOptionsPage` adds a page after the game's five options pages, both in the title screen's options and in the pause menu's 各種設定. The menus scroll, so many pages can be added; each page has no scrolling.
+
+| Limit                          | Value                                    |
+| ------------------------------ | ---------------------------------------- |
+| Pages (all Mods together)      | 16 (`wots4::maxOptionsPages`)            |
+| Items per page                 | 1 to 8 (`wots4::maxOptionsItems`); the page's frame holds 8 rows |
+| Choices of a choice item       | 2 to 10 (`wots4::maxOptionChoices`)      |
+| Title                          | Up to 63 characters                      |
+| Item label, each choice        | Up to 127 characters                     |
+
+Item kinds (`wots4::OptionItem`):
+
+| `kind`                 | `choices`                                                  | Value                       |
+| ---------------------- | ---------------------------------------------------------- | --------------------------- |
+| `wots4::optionToggle`  | 2: `choices[0]` is "on", `choices[1]` is "off"             | 1 for on, 0 for off         |
+| `wots4::optionChoice`  | 2 to 10; the player moves left and right through them      | The index of the choice     |
+
+Every text (title, label, choice) is either a string, which the ModLoader copies, or a game text: `wots4::gameText(503)` shows text number 503 of the game's UI texts in the game's language. Game texts are read when a menu is first built, after the game has loaded them.
+
+`wots4::OptionsPageCallbacks`:
+
+- `read(context, values, count)`: the page is about to be shown. Write the current value of each item to `values[0..count-1]`. A choice value outside the choices shows the first choice.
+- `changed(context, item, value)`: the player changed item number `item` (in the order given to `addOptionsPage`).
+
+The ModLoader does not store the values. To keep them, save them in the Mod's own file, for example from `onOptionsSaved`.
+
+```cpp
+static const wchar_t* const onOff[] = {wots4::gameText(211), wots4::gameText(212)};  // 有り, 無し
+static const wchar_t* const sizes[] = {L"Small", L"Medium", L"Large"};
+const wots4::OptionItem items[] = {
+    {wots4::optionToggle, L"Show the map", onOff, 2},
+    {wots4::optionChoice, L"Map size", sizes, 3},
+};
+const wots4::OptionsPageCallbacks callbacks{nullptr, readValues, valueChanged};
+if (!context->host->addOptionsPage(context->module, L"Map", items, 2, &callbacks)) return FALSE;
+```
 
 ## Adding a Mod
 

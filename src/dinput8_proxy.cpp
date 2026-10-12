@@ -1,6 +1,7 @@
 // dinput8.dll proxy. Every export forwards to the system dinput8.dll; the first
 // DirectInput8Create call also loads the Mods (see wots4_mod_loader.h).
 #include "wots4_mod_loader.h"
+#include "wots4_game_hooks.h"
 #define DIRECTINPUT_VERSION 0x0800
 #include <dinput.h>
 #include <cstdio>
@@ -133,7 +134,12 @@ void logLoadResult(const wots4::LoadResult& result) {
 }
 
 const wots4::HostApi hostApi{sizeof(wots4::HostApi), wots4::modApiVersion,
-    hostLog, wots4::claimHook, wots4::releaseHookClaims};
+    hostLog, wots4::claimHook, wots4::releaseHookClaims,
+    wots4::addOptionsPage, wots4::onFrame, wots4::onOptionsSaved};
+
+void registryLog(HMODULE owner, const std::string& message) {
+    writeLog(ownerName(owner).c_str(), message);
+}
 
 // ---------------------------------------------------------------- Mods
 
@@ -152,10 +158,15 @@ void loadModsOnce() {
     logPath = loaderDirectory + L"mod_loader.log";
     wots4::pinModule(selfModule);
 
+    wots4::hostRegistry.log = registryLog;
+    wots4::game::prepareGameHooks(GetModuleHandleW(nullptr), selfModule);
+
     writeLog("ModLoader", "loading Mods from " + toUtf8(loaderDirectory) + "mods\\");
     std::vector<wots4::LoadResult> results = wots4::loadMods(loaderDirectory, selfModule, &hostApi);
     if (results.empty()) writeLog("ModLoader", "no mods\\<name>\\mod.dll found");
     for (const wots4::LoadResult& result : results) logLoadResult(result);
+
+    wots4::game::installGameHooks();
 }
 
 // ---------------------------------------------------------------- system dinput8.dll
