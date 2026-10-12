@@ -14,8 +14,6 @@ constexpr uint32_t modApiVersion = 2;
 // of a page has a limit: the menus scroll, and so does a page with more items than
 // its frame shows, with arrows above and below.
 constexpr uint32_t optionsItemsPerScreen = 8;  // Items a page shows at once
-[[deprecated("a page has no item limit; it scrolls past optionsItemsPerScreen")]]
-constexpr uint32_t maxOptionsItems = optionsItemsPerScreen;
 constexpr uint32_t maxOptionChoices = 10;     // Per choice item
 constexpr uint32_t maxOptionsTitleChars = 63;  // The menu shows at most 63 characters
 constexpr uint32_t maxOptionTextChars = 127;   // Item labels and choices

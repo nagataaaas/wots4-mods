@@ -92,8 +92,6 @@ A page shows 8 items at once (`wots4::optionsItemsPerScreen`). A page with more 
 | Title                          | Up to 63 characters                      |
 | Item label, each choice        | Up to 127 characters                     |
 
-`wots4::maxOptionsItems` is deprecated: it was the old limit of 8 items per page.
-
 Item kinds (`wots4::OptionItem`):
 
 | `kind`                 | `choices`                                                  | Value                       |
