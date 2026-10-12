@@ -23,10 +23,22 @@ void WINAPI ignoreChange(void*, uint32_t, uint32_t) {}
 void WINAPI ignoreEvent(void*) {}
 
 const OptionsPageCallbacks callbacks{nullptr, readNothing, ignoreChange};
-const wchar_t* const onOff[] = {L"On", L"Off"};
-const wchar_t* const levels[] = {L"Easy", L"Normal", L"Hard", L"Any"};
-const OptionItem toggle{optionToggle, L"Connect", onOff, 2};
-const OptionItem level{optionChoice, L"Level", levels, 4};
+
+// The same text in both languages, for checks that are not about languages.
+LocalizedText inBoth(const wchar_t* text) {
+    return {text, text};
+}
+
+const LocalizedText onOff[] = {inBoth(L"On"), inBoth(L"Off")};
+const LocalizedText levels[] = {inBoth(L"Easy"), inBoth(L"Normal"), inBoth(L"Hard"), inBoth(L"Any")};
+const OptionItem toggle{optionToggle, inBoth(L"Connect"), onOff, 2};
+const OptionItem level{optionChoice, inBoth(L"Level"), levels, 4};
+
+BOOL addPage(HMODULE mod, const wchar_t* title, const OptionItem* items, uint32_t count,
+    const OptionsPageCallbacks* pageCallbacks = &callbacks) {
+    const LocalizedText localizedTitle = inBoth(title);
+    return addOptionsPage(mod, &localizedTitle, items, count, pageCallbacks);
+}
 
 HMODULE fakeModule(uintptr_t value) {
     return reinterpret_cast<HMODULE>(value);
@@ -42,50 +54,60 @@ void checkPageLimits() {
     const auto mod = fakeModule(0x10000);
     resetRegistry(true);
     const OptionItem items[] = {toggle, level};
-    check("a valid page is accepted", addOptionsPage(mod, L"Online", items, 2, &callbacks));
-    check("the page is copied", hostRegistry.pages.size() == 1 && hostRegistry.pages[0].title.text == L"Online" &&
-        hostRegistry.pages[0].items.size() == 2 && hostRegistry.pages[0].items[1].choices[3].text == L"Any");
+    check("a valid page is accepted", addPage(mod, L"Online", items, 2, &callbacks));
+    check("the page is copied", hostRegistry.pages.size() == 1 && hostRegistry.pages[0].title.english.string == L"Online" &&
+        hostRegistry.pages[0].items.size() == 2 && hostRegistry.pages[0].items[1].choices[3].japanese.string == L"Any");
     const auto& copied = hostRegistry.pages[0].items[1];
     check("choice pointers point into the copy", copied.choicePointers.size() == 4 &&
         copied.choicePointers[2] == copied.choices[2].text.c_str());
 
-    check("no items refused", !addOptionsPage(mod, L"Empty", items, 0, &callbacks));
+    check("no items refused", !addPage(mod, L"Empty", items, 0, &callbacks));
     OptionItem nine[9] = {toggle, toggle, toggle, toggle, toggle, toggle, toggle, toggle, toggle};
-    check("8 items accepted", addOptionsPage(mod, L"Eight", nine, 8, &callbacks));
-    check("9 items refused", !addOptionsPage(mod, L"Nine", nine, 9, &callbacks));
+    check("8 items accepted", addPage(mod, L"Eight", nine, 8, &callbacks));
+    check("9 items refused", !addPage(mod, L"Nine", nine, 9, &callbacks));
 
     std::wstring longTitle(64, L'x');
-    check("63-character title accepted", addOptionsPage(mod, longTitle.substr(0, 63).c_str(), items, 1, &callbacks));
-    check("64-character title refused", !addOptionsPage(mod, longTitle.c_str(), items, 1, &callbacks));
-    check("empty title refused", !addOptionsPage(mod, L"", items, 1, &callbacks));
+    check("63-character title accepted", addPage(mod, longTitle.substr(0, 63).c_str(), items, 1, &callbacks));
+    check("64-character title refused", !addPage(mod, longTitle.c_str(), items, 1, &callbacks));
+    check("empty title refused", !addPage(mod, L"", items, 1, &callbacks));
 
     std::wstring longLabel(128, L'y');
     OptionItem labelled = toggle;
-    labelled.label = longLabel.c_str();
-    check("128-character label refused", !addOptionsPage(mod, L"Label", &labelled, 1, &callbacks));
+    labelled.label = inBoth(longLabel.c_str());
+    check("128-character label refused", !addPage(mod, L"Label", &labelled, 1, &callbacks));
     longLabel.resize(127);
-    labelled.label = longLabel.c_str();
-    check("127-character label accepted", addOptionsPage(mod, L"Label", &labelled, 1, &callbacks));
+    labelled.label = inBoth(longLabel.c_str());
+    check("127-character label accepted", addPage(mod, L"Label", &labelled, 1, &callbacks));
 
-    OptionItem threeWayToggle{optionToggle, L"Toggle", levels, 3};
-    check("toggle with 3 choices refused", !addOptionsPage(mod, L"T", &threeWayToggle, 1, &callbacks));
-    const wchar_t* const eleven[] = {L"1", L"2", L"3", L"4", L"5", L"6", L"7", L"8", L"9", L"10", L"11"};
-    OptionItem tenChoices{optionChoice, L"Ten", eleven, 10};
-    OptionItem elevenChoices{optionChoice, L"Eleven", eleven, 11};
-    OptionItem oneChoice{optionChoice, L"One", eleven, 1};
-    check("10 choices accepted", addOptionsPage(mod, L"C10", &tenChoices, 1, &callbacks));
-    check("11 choices refused", !addOptionsPage(mod, L"C11", &elevenChoices, 1, &callbacks));
-    check("1 choice refused", !addOptionsPage(mod, L"C1", &oneChoice, 1, &callbacks));
-    OptionItem slider{static_cast<OptionKind>(1), L"Slider", onOff, 2};
-    check("unknown item kind refused", !addOptionsPage(mod, L"K", &slider, 1, &callbacks));
-    const wchar_t* const withNull[] = {L"On", nullptr};
-    OptionItem nullChoice{optionToggle, L"Null", withNull, 2};
-    check("null choice refused", !addOptionsPage(mod, L"N", &nullChoice, 1, &callbacks));
+    OptionItem threeWayToggle{optionToggle, inBoth(L"Toggle"), levels, 3};
+    check("toggle with 3 choices refused", !addPage(mod, L"T", &threeWayToggle, 1, &callbacks));
+    const LocalizedText eleven[] = {inBoth(L"1"), inBoth(L"2"), inBoth(L"3"), inBoth(L"4"), inBoth(L"5"),
+        inBoth(L"6"), inBoth(L"7"), inBoth(L"8"), inBoth(L"9"), inBoth(L"10"), inBoth(L"11")};
+    OptionItem tenChoices{optionChoice, inBoth(L"Ten"), eleven, 10};
+    OptionItem elevenChoices{optionChoice, inBoth(L"Eleven"), eleven, 11};
+    OptionItem oneChoice{optionChoice, inBoth(L"One"), eleven, 1};
+    check("10 choices accepted", addPage(mod, L"C10", &tenChoices, 1, &callbacks));
+    check("11 choices refused", !addPage(mod, L"C11", &elevenChoices, 1, &callbacks));
+    check("1 choice refused", !addPage(mod, L"C1", &oneChoice, 1, &callbacks));
+    OptionItem slider{static_cast<OptionKind>(1), inBoth(L"Slider"), onOff, 2};
+    check("unknown item kind refused", !addPage(mod, L"K", &slider, 1, &callbacks));
+    const LocalizedText withNull[] = {inBoth(L"On"), {nullptr, nullptr}};
+    OptionItem nullChoice{optionToggle, inBoth(L"Null"), withNull, 2};
+    check("null choice refused", !addPage(mod, L"N", &nullChoice, 1, &callbacks));
+    const LocalizedText withoutEnglish[] = {inBoth(L"On"), {L"切", nullptr}};
+    OptionItem japaneseOnlyChoice{optionToggle, inBoth(L"Half"), withoutEnglish, 2};
+    check("a choice without the English text refused", !addPage(mod, L"H", &japaneseOnlyChoice, 1, &callbacks));
+    OptionItem japaneseOnlyLabel{optionToggle, {L"日本語だけ", nullptr}, onOff, 2};
+    check("a label without the English text refused", !addPage(mod, L"J", &japaneseOnlyLabel, 1, &callbacks));
+    const LocalizedText englishOnlyTitle{nullptr, L"English only"};
+    check("a title without the Japanese text refused",
+        !addOptionsPage(mod, &englishOnlyTitle, items, 1, &callbacks));
+    check("no title refused", !addOptionsPage(mod, nullptr, items, 1, &callbacks));
     OptionsPageCallbacks noRead{nullptr, nullptr, ignoreChange};
-    check("missing read callback refused", !addOptionsPage(mod, L"R", items, 1, &noRead));
+    check("missing read callback refused", !addPage(mod, L"R", items, 1, &noRead));
 
     bool allAccepted = true;
-    while (hostRegistry.pages.size() < 100) allAccepted &= addOptionsPage(mod, L"Fill", items, 2, &callbacks) != FALSE;
+    while (hostRegistry.pages.size() < 100) allAccepted &= addPage(mod, L"Fill", items, 2, &callbacks) != FALSE;
     check("100 pages accepted; the number of pages has no limit", allAccepted);
     bool pointersFollow = true;
     for (const OptionsPageDefinition& page : hostRegistry.pages) {
@@ -99,13 +121,17 @@ void checkPageLimits() {
 void checkGameTexts() {
     const auto mod = fakeModule(0x10000);
     resetRegistry(true);
-    const wchar_t* const gameChoices[] = {gameText(211), gameText(212)};
-    const OptionItem item{optionToggle, gameText(502), gameChoices, 2};
-    check("game text numbers are accepted for every text", addOptionsPage(mod, gameText(503), &item, 1, &callbacks));
+    const LocalizedText gameChoices[] = {localizedGameText(211), localizedGameText(212)};
+    const OptionItem item{optionToggle, {L"接続", gameText(502)}, gameChoices, 2};
+    const LocalizedText title = localizedGameText(503);
+    check("game text numbers are accepted for every text", addOptionsPage(mod, &title, &item, 1, &callbacks));
     const OptionsPageDefinition& page = hostRegistry.pages[0];
-    check("game text numbers are kept for later", page.title.gameTextNumber == 503 && page.title.text.empty() &&
-        page.items[0].label.gameTextNumber == 502 && page.items[0].choices[1].gameTextNumber == 212);
-    check("a string keeps number 0", copyText(L"Text").gameTextNumber == 0);
+    check("game text numbers are kept for later", page.title.japanese.gameTextNumber == 503 &&
+        page.title.english.gameTextNumber == 503 && page.title.text.empty() &&
+        page.items[0].label.english.gameTextNumber == 502 && page.items[0].choices[1].japanese.gameTextNumber == 212);
+    check("a string and a game text can be mixed between the languages",
+        page.items[0].label.japanese.gameTextNumber == 0 && page.items[0].label.japanese.string == L"接続");
+    check("a string keeps number 0", copySource(L"Text").gameTextNumber == 0);
     check("number 0 is no text", !isGameText(gameText(0)) && !isValidText(gameText(0), maxOptionTextChars));
     check("the largest number is a game text", isGameText(gameText(maxGameTextNumber)));
 }
@@ -114,11 +140,11 @@ void checkRegistrationWindow() {
     const auto mod = fakeModule(0x10000);
     const OptionItem items[] = {toggle};
     resetRegistry(false);
-    check("page refused outside initialization", !addOptionsPage(mod, L"Late", items, 1, &callbacks));
+    check("page refused outside initialization", !addPage(mod, L"Late", items, 1, &callbacks));
     check("onFrame refused outside initialization", !onFrame(mod, ignoreEvent, nullptr));
     resetRegistry(true);
     hostRegistry.supported = {};
-    check("page refused on an unsupported exe", !addOptionsPage(mod, L"Old", items, 1, &callbacks));
+    check("page refused on an unsupported exe", !addPage(mod, L"Old", items, 1, &callbacks));
     check("onOptionsSaved refused on an unsupported exe", !onOptionsSaved(mod, ignoreEvent, nullptr));
 }
 
@@ -136,13 +162,13 @@ void checkRefusedModIsForgotten() {
     const auto kept = fakeModule(0x10000), refused = fakeModule(0x20000);
     resetRegistry(true);
     const OptionItem items[] = {level};
-    addOptionsPage(refused, L"Gone", items, 1, &callbacks);
-    addOptionsPage(kept, L"Kept", items, 1, &callbacks);
+    addPage(refused, L"Gone", items, 1);
+    addPage(kept, L"Kept", items, 1);
     onFrame(refused, ignoreEvent, nullptr);
     onOptionsSaved(kept, ignoreEvent, nullptr);
     removeRegistrations(refused);
     const auto& pages = hostRegistry.pages;
-    check("refused Mod's page removed", pages.size() == 1 && pages[0].title.text == L"Kept");
+    check("refused Mod's page removed", pages.size() == 1 && pages[0].title.japanese.string == L"Kept");
     check("choice pointers follow the moved page",
         pages.size() == 1 && pages[0].items[0].choicePointers[0] == pages[0].items[0].choices[0].text.c_str());
     check("refused Mod's callbacks removed, others kept",

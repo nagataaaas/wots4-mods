@@ -14,11 +14,18 @@ namespace wots4 {
 
 constexpr uint32_t maxGameEventHandlers = 32;  // Per event
 
-// A text as the Mod gave it: a copied string, or a game text number whose
-// string wots4_game_hooks.cpp copies into text when the menus are first built
-// (the game may not have loaded its texts while the Mods initialize).
-struct OptionText {
+// One language of a text as the Mod gave it: a copied string, or a game text number.
+struct TextSource {
     uint32_t gameTextNumber;  // 0 for a string
+    std::wstring string;
+};
+
+// Both languages of a text. wots4_game_hooks.cpp sets text from the one the game
+// uses when the menus are first built (the game may not have loaded its texts, or
+// decided its language, while the Mods initialize).
+struct OptionText {
+    TextSource japanese;
+    TextSource english;
     std::wstring text;
 };
 
@@ -55,7 +62,7 @@ struct HostRegistry {
     std::vector<OptionsPageDefinition> pages;
     std::vector<GameEventHandler> frameHandlers;
     std::vector<GameEventHandler> optionsSavedHandlers;
-    bool gameTextsCopied = false;  // Every OptionText::text is final; pointers into it are safe
+    bool textsResolved = false;  // Every OptionText::text is final; pointers into it are safe
     void (*log)(HMODULE owner, const std::string& message) = nullptr;
 };
 inline HostRegistry hostRegistry;
@@ -76,31 +83,42 @@ inline bool isValidText(const wchar_t* text, size_t maxChars) {
     return isGameText(text) || boundedTextLength(text, maxChars);
 }
 
-inline OptionText copyText(const wchar_t* text) {
+inline bool isValidText(const LocalizedText& text, size_t maxChars) {
+    return isValidText(text.japanese, maxChars) && isValidText(text.english, maxChars);
+}
+
+inline TextSource copySource(const wchar_t* text) {
     if (isGameText(text)) return {static_cast<uint32_t>(reinterpret_cast<uintptr_t>(text)), {}};
     return {0, text};
 }
 
+inline OptionText copyText(const LocalizedText& text) {
+    return {copySource(text.japanese), copySource(text.english), {}};
+}
+
 // nullptr if the item is valid, else why it is not.
 inline const char* optionItemProblem(const OptionItem& item) {
-    if (!isValidText(item.label, maxOptionTextChars)) return "an item label is empty or longer than 127 characters";
+    if (!isValidText(item.label, maxOptionTextChars))
+        return "an item label is missing in a language, empty, or longer than 127 characters";
     if (item.kind == optionToggle && item.choiceCount != 2) return "a toggle item needs exactly 2 choices";
     if (item.kind == optionChoice && (item.choiceCount < 2 || item.choiceCount > maxOptionChoices))
         return "a choice item needs 2 to 10 choices";
     if (item.kind != optionToggle && item.kind != optionChoice) return "an item has an unknown kind";
     if (!item.choices) return "an item has no choices";
     for (uint32_t i = 0; i < item.choiceCount; ++i) {
-        if (!isValidText(item.choices[i], maxOptionTextChars)) return "a choice is empty or longer than 127 characters";
+        if (!isValidText(item.choices[i], maxOptionTextChars))
+            return "a choice is missing in a language, empty, or longer than 127 characters";
     }
     return nullptr;
 }
 
 // nullptr if the page can be added, else why it cannot.
-inline const char* optionsPageProblem(const wchar_t* title, const OptionItem* items, uint32_t count,
+inline const char* optionsPageProblem(const LocalizedText* title, const OptionItem* items, uint32_t count,
     const OptionsPageCallbacks* callbacks) {
     if (!hostRegistry.registrationOpen) return "it was called outside Wots4ModInitialize";
     if (!hostRegistry.supported.options) return "this version of the game is not supported";
-    if (!isValidText(title, maxOptionsTitleChars)) return "the title is empty or longer than 63 characters";
+    if (!title || !isValidText(*title, maxOptionsTitleChars))
+        return "the title is missing in a language, empty, or longer than 63 characters";
     if (!items || count == 0 || count > maxOptionsItems) return "a page needs 1 to 8 items";
     if (!callbacks || !callbacks->read || !callbacks->changed) return "the read and changed callbacks are required";
     for (uint32_t i = 0; i < count; ++i) {
@@ -125,7 +143,7 @@ inline void bindChoicePointers(OptionsPageDefinition& page) {
 }
 
 // HostApi::addOptionsPage
-inline BOOL WINAPI addOptionsPage(HMODULE owner, const wchar_t* title, const OptionItem* items, uint32_t count,
+inline BOOL WINAPI addOptionsPage(HMODULE owner, const LocalizedText* title, const OptionItem* items, uint32_t count,
     const OptionsPageCallbacks* callbacks) {
     if (const char* problem = optionsPageProblem(title, items, count, callbacks)) {
         registryLog(owner, std::string("addOptionsPage refused: ") + problem);
@@ -135,7 +153,7 @@ inline BOOL WINAPI addOptionsPage(HMODULE owner, const wchar_t* title, const Opt
     // only after registration closed, so binding again each time is enough.
     // No exception may cross the C ABI back into the Mod.
     try {
-        OptionsPageDefinition page{owner, copyText(title), {}, *callbacks};
+        OptionsPageDefinition page{owner, copyText(*title), {}, *callbacks};
         for (uint32_t i = 0; i < count; ++i) page.items.push_back(copyOptionItem(items[i]));
         hostRegistry.pages.push_back(std::move(page));
         for (OptionsPageDefinition& registered : hostRegistry.pages) bindChoicePointers(registered);

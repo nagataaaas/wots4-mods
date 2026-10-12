@@ -30,7 +30,24 @@ std::vector<uint8_t> readFile(const wchar_t* path) {
     return bytes;
 }
 
-// Copies the headers and sections to where the loader would put them. No relocations.
+// Moves the absolute addresses in the code to where the copy is, as Windows does with ASLR.
+void applyRelocations(uint8_t* image, const IMAGE_NT_HEADERS32& nt) {
+    const IMAGE_DATA_DIRECTORY relocations = nt.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
+    const auto delta = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(image) - nt.OptionalHeader.ImageBase);
+    for (uint32_t offset = relocations.VirtualAddress; offset < relocations.VirtualAddress + relocations.Size;) {
+        auto block = reinterpret_cast<const IMAGE_BASE_RELOCATION*>(image + offset);
+        if (block->SizeOfBlock < sizeof(IMAGE_BASE_RELOCATION)) return;
+        auto entries = reinterpret_cast<const WORD*>(block + 1);
+        const uint32_t entryCount = (block->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD);
+        for (uint32_t i = 0; i < entryCount; ++i) {
+            if ((entries[i] >> 12) == IMAGE_REL_BASED_HIGHLOW)
+                *reinterpret_cast<uint32_t*>(image + block->VirtualAddress + (entries[i] & 0xfff)) += delta;
+        }
+        offset += block->SizeOfBlock;
+    }
+}
+
+// Copies the headers and sections to where the loader would put them, and relocates them.
 uint8_t* mapImage(const std::vector<uint8_t>& file, size_t& imageSize) {
     auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(file.data());
     auto nt = reinterpret_cast<const IMAGE_NT_HEADERS32*>(file.data() + dos->e_lfanew);
@@ -41,6 +58,7 @@ uint8_t* mapImage(const std::vector<uint8_t>& file, size_t& imageSize) {
     auto sections = IMAGE_FIRST_SECTION(nt);
     for (unsigned i = 0; i < nt->FileHeader.NumberOfSections; ++i)
         memcpy(image + sections[i].VirtualAddress, file.data() + sections[i].PointerToRawData, sections[i].SizeOfRawData);
+    applyRelocations(image, *nt);
     return image;
 }
 
@@ -50,11 +68,12 @@ void WINAPI ignoreEvent(void*) {}
 
 void registerOnePageAndEvents() {
     const auto mod = reinterpret_cast<HMODULE>(0x10000);
-    const wchar_t* const onOff[] = {L"On", L"Off"};
-    const OptionItem item{optionToggle, L"Toggle", onOff, 2};
+    const LocalizedText onOff[] = {localizedGameText(211), localizedGameText(212)};
+    const OptionItem item{optionToggle, {L"切り替え", L"Toggle"}, onOff, 2};
     const OptionsPageCallbacks callbacks{nullptr, readNothing, ignoreChange};
+    const LocalizedText title{L"ページ", L"Page"};
     hostRegistry.registrationOpen = true;
-    check("page accepted on the supported exe", addOptionsPage(mod, L"Page", &item, 1, &callbacks));
+    check("page accepted on the supported exe", addOptionsPage(mod, &title, &item, 1, &callbacks));
     check("onFrame accepted", onFrame(mod, ignoreEvent, nullptr));
     check("onOptionsSaved accepted", onOptionsSaved(mod, ignoreEvent, nullptr));
     hostRegistry.registrationOpen = false;
@@ -112,6 +131,15 @@ int wmain(int argc, wchar_t** argv) {
 
     check("hooks removed", MH_DisableHook(MH_ALL_HOOKS) == MH_OK && MH_Uninitialize() == MH_OK);
     check("every byte of the copy restored", !memcmp(image, original.data(), imageSize));
+
+    // The menu language is read where 0x537b28 stores it; other code there means no options pages.
+    uint8_t* storeLanguage = image + (0x537b28 - exeImageBase);
+    storeLanguage[2] ^= 1;
+    hookClaims.clear();
+    prepareGameHooks(reinterpret_cast<HMODULE>(image), owner);
+    check("with the language code changed, options pages are unavailable and the rest still works",
+        !hostRegistry.supported.options && hostRegistry.supported.frame && hostRegistry.supported.optionsSaved);
+    storeLanguage[2] ^= 1;
 
     uint8_t* wrongVersion = image;
     reinterpret_cast<IMAGE_NT_HEADERS32*>(wrongVersion + reinterpret_cast<IMAGE_DOS_HEADER*>(wrongVersion)->e_lfanew)

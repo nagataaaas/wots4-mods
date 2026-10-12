@@ -97,7 +97,9 @@ Item kinds (`wots4::OptionItem`):
 | `wots4::optionToggle`  | 2: `choices[0]` is "on", `choices[1]` is "off"             | 1 for on, 0 for off         |
 | `wots4::optionChoice`  | 2 to 10; the player moves left and right through them      | The index of the choice     |
 
-Every text (title, label, choice) is either a string, which the ModLoader copies, or a game text: `wots4::gameText(503)` shows text number 503 of the game's UI texts in the game's language. Game texts are read when a menu is first built, after the game has loaded them.
+Every text (title, label, choice) is a `wots4::LocalizedText` with a Japanese and an English text, both required. When a menu is first built, the ModLoader shows the Japanese text if the game's menus are in Japanese, and the English text otherwise (the game has no other menu languages; a language changed in the game takes effect after a restart, as in the game).
+
+Each of the two is either a string, which the ModLoader copies, or a game text: `wots4::gameText(503)` shows text number 503 of the game's UI texts. A game text already follows the game's language, so `wots4::localizedGameText(503)` uses it for both. Game texts are read when a menu is first built, after the game has loaded them.
 
 `wots4::OptionsPageCallbacks`:
 
@@ -107,14 +109,16 @@ Every text (title, label, choice) is either a string, which the ModLoader copies
 The ModLoader does not store the values. To keep them, save them in the Mod's own file, for example from `onOptionsSaved`.
 
 ```cpp
-static const wchar_t* const onOff[] = {wots4::gameText(211), wots4::gameText(212)};  // 有り, 無し
-static const wchar_t* const sizes[] = {L"Small", L"Medium", L"Large"};
+// 有り / Enable, 無し / Disable
+const wots4::LocalizedText onOff[] = {wots4::localizedGameText(211), wots4::localizedGameText(212)};
+const wots4::LocalizedText sizes[] = {{L"小", L"Small"}, {L"中", L"Medium"}, {L"大", L"Large"}};
 const wots4::OptionItem items[] = {
-    {wots4::optionToggle, L"Show the map", onOff, 2},
-    {wots4::optionChoice, L"Map size", sizes, 3},
+    {wots4::optionToggle, {L"地図を表示", L"Show the Map"}, onOff, 2},
+    {wots4::optionChoice, {L"地図の大きさ", L"Map Size"}, sizes, 3},
 };
 const wots4::OptionsPageCallbacks callbacks{nullptr, readValues, valueChanged};
-if (!context->host->addOptionsPage(context->module, L"Map", items, 2, &callbacks)) return FALSE;
+const wots4::LocalizedText title{L"地図", L"Map"};
+if (!context->host->addOptionsPage(context->module, &title, items, 2, &callbacks)) return FALSE;
 ```
 
 ## Adding a Mod

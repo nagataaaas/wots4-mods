@@ -283,16 +283,19 @@ void WINAPI valueChanged(void* context, uint32_t item, uint32_t value) {
     state->lastValue = value;
 }
 
-// GameTextUI: the manager's +0x1c points to {count, strings}.
+// GameTextUI: the manager's +0x1c points to {count, strings}; +0x4c is the menu language.
 constexpr uint32_t gameTextCount = 1000;
 const wchar_t* gameTextStrings[gameTextCount];
 uint32_t gameTextTable[2] = {gameTextCount, reinterpret_cast<uint32_t>(gameTextStrings)};
-uint8_t gameTextManagerObject[0x20];
+uint8_t gameTextManagerObject[0x50];
+constexpr uint32_t englishLanguage = 1;
 
+// The game in English, as most checks expect.
 void loadGameTexts() {
     gameTextStrings[502] = L"Connect";
     gameTextStrings[503] = L"Page B";
     field<uint32_t*>(gameTextManagerObject, gameTextUiTable) = gameTextTable;
+    field<uint32_t>(gameTextManagerObject, gameTextLanguage) = englishLanguage;
     writeSlot(gameTextManager, gameTextManagerObject);
 }
 
@@ -304,14 +307,18 @@ void registerMods() {
     hostRegistry.supported = {true, true, true};
     hostRegistry.registrationOpen = true;
     const auto mod = reinterpret_cast<HMODULE>(0x10000);
-    const wchar_t* const onOff[] = {L"Yes", L"No"};
-    const wchar_t* const levels[] = {L"Low", L"Mid", L"High", L"Any"};
-    const OptionItem itemsA[] = {{optionToggle, gameText(502), onOff, 2}, {optionChoice, L"Level", levels, 4}};
-    const OptionItem itemsB[] = {{optionToggle, L"Show", onOff, 2}, {optionChoice, L"Size", levels, 3}};
+    const LocalizedText onOff[] = {{L"はい", L"Yes"}, {L"いいえ", L"No"}};
+    const LocalizedText levels[] = {{L"低", L"Low"}, {L"中", L"Mid"}, {L"高", L"High"}, {L"全", L"Any"}};
+    const OptionItem itemsA[] = {
+        {optionToggle, localizedGameText(502), onOff, 2}, {optionChoice, {L"段階", L"Level"}, levels, 4}};
+    const OptionItem itemsB[] = {
+        {optionToggle, {L"表示", L"Show"}, onOff, 2}, {optionChoice, {L"大きさ", L"Size"}, levels, 3}};
     const OptionsPageCallbacks callbacksA{&modA, readValues, valueChanged};
     const OptionsPageCallbacks callbacksB{&modB, readValues, valueChanged};
-    addOptionsPage(mod, L"Page A", itemsA, 2, &callbacksA);
-    addOptionsPage(mod, gameText(503), itemsB, 2, &callbacksB);
+    const LocalizedText titleA{L"ページA", L"Page A"};
+    const LocalizedText titleB = localizedGameText(503);
+    addOptionsPage(mod, &titleA, itemsA, 2, &callbacksA);
+    addOptionsPage(mod, &titleB, itemsB, 2, &callbacksB);
     onFrame(mod, countFrame, nullptr);
     onOptionsSaved(mod, countOptionsSaved, nullptr);
     hostRegistry.registrationOpen = false;
@@ -354,12 +361,12 @@ void checkTitleScreen() {
 
     callAt(0x676120, {0, address(parent)});
     check("title: no pages while the game texts are not loaded",
-        listEntries.empty() && !titlePages.find(reinterpret_cast<uintptr_t>(parent)) && !hostRegistry.gameTextsCopied);
+        listEntries.empty() && !titlePages.find(reinterpret_cast<uintptr_t>(parent)) && !hostRegistry.textsResolved);
     loadGameTexts();
 
     callAt(0x676120, {0, address(parent)});
     const TitlePages* entry = titlePages.find(reinterpret_cast<uintptr_t>(parent));
-    check("title: game texts copied once loaded", hostRegistry.gameTextsCopied &&
+    check("title: the English texts are resolved once the game texts are loaded", hostRegistry.textsResolved &&
         hostRegistry.pages[1].title.text == L"Page B" && hostRegistry.pages[0].items[0].label.text == L"Connect");
     check("title: two Mod pages recorded for the parent", entry && entry->pages.size() == 2);
     check("title: list rows 5 and 6 carry the titles", listEntries.size() == 2 && listEntries[0].index == 5 &&
@@ -489,6 +496,17 @@ void checkGameEvents() {
 
 }  // namespace
 
+// The texts are resolved once per process; this resolves them again, after every other check.
+void checkJapaneseTexts() {
+    field<uint32_t>(gameTextManagerObject, gameTextLanguage) = 0;
+    gameTextStrings[502] = L"接続";
+    hostRegistry.textsResolved = false;
+    check("Japanese game: the Japanese strings and the game texts are used", resolveTexts() &&
+        hostRegistry.pages[0].title.text == L"ページA" && hostRegistry.pages[0].items[0].label.text == L"接続" &&
+        hostRegistry.pages[1].items[1].choicePointers[2] == hostRegistry.pages[1].items[1].choices[2].text.c_str() &&
+        wcscmp(hostRegistry.pages[1].items[1].choicePointers[2], L"高") == 0);
+}
+
 int main() {
     setvbuf(stdout, nullptr, _IONBF, 0);  // Keep every line if a hook crashes the probe
     fakeImage = static_cast<uint8_t*>(VirtualAlloc(nullptr, fakeEnd - fakeStart, MEM_RESERVE | MEM_COMMIT,
@@ -509,6 +527,7 @@ int main() {
     checkTitleScreen();
     checkPauseMenu();
     checkGameEvents();
+    checkJapaneseTexts();
     check("every object the hooks allocated was released", objectsAllocated == objectsReleased);
 
     check("hooks removed", MH_DisableHook(MH_ALL_HOOKS) == MH_OK && MH_Uninitialize() == MH_OK);

@@ -27,6 +27,18 @@ inline bool isGameText(const wchar_t* text) {
     return text && reinterpret_cast<uintptr_t>(text) <= maxGameTextNumber;
 }
 
+// A text of an options page in both menu languages of the game. The ModLoader shows
+// japanese when the game's menus are in Japanese and english otherwise.
+struct LocalizedText {
+    const wchar_t* japanese;
+    const wchar_t* english;
+};
+
+// A game text already follows the game's language, so it is the same in both.
+inline LocalizedText localizedGameText(uint32_t number) {
+    return {gameText(number), gameText(number)};
+}
+
 enum OptionKind : uint32_t {
     optionToggle = 0,  // Two choices: choices[0] is "on" (value 1), choices[1] is "off" (value 0)
     optionChoice = 3,  // 2 to maxOptionChoices choices; the value is the index
@@ -34,8 +46,8 @@ enum OptionKind : uint32_t {
 
 struct OptionItem {
     OptionKind kind;
-    const wchar_t* label;
-    const wchar_t* const* choices;
+    LocalizedText label;
+    const LocalizedText* choices;
     uint32_t choiceCount;
 };
 
@@ -65,7 +77,7 @@ struct HostApi {
     // or this version of the game is not supported.
 
     // Adds a page after the game's options pages, on the title screen and in the pause menu.
-    BOOL (WINAPI* addOptionsPage)(HMODULE owner, const wchar_t* title,
+    BOOL (WINAPI* addOptionsPage)(HMODULE owner, const LocalizedText* title,
         const OptionItem* items, uint32_t count, const OptionsPageCallbacks* callbacks);
     // Called once per game frame, after the game's update.
     BOOL (WINAPI* onFrame)(HMODULE owner, GameEventCallback callback, void* context);

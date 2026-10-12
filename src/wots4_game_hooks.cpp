@@ -162,6 +162,16 @@ void copyItemText(uint8_t* item, uint32_t offset, const OptionText& text) {
 // GameTextUI: the text manager points to {count, pointer array}.
 constexpr uint32_t gameTextManager = 0x9e9680;
 constexpr uint32_t gameTextUiTable = 0x1c;
+// The menu language, set at startup from S4-SETTINGS.ini [Language] (0x537b28). A change in
+// the game takes effect after a restart. 0 is Japanese; every other language uses the
+// English menu texts (US/), the only other ones the game has.
+constexpr uint32_t gameTextLanguage = 0x4c;
+constexpr uint32_t japaneseLanguage = 0;
+
+bool menusInJapanese() {
+    auto manager = *reinterpret_cast<uint8_t**>(gameAddress(gameTextManager));
+    return manager && field<uint32_t>(manager, gameTextLanguage) == japaneseLanguage;
+}
 
 const wchar_t* gameTextString(uint32_t number) {
     auto manager = *reinterpret_cast<uint8_t**>(gameAddress(gameTextManager));
@@ -172,10 +182,11 @@ const wchar_t* gameTextString(uint32_t number) {
     return strings ? strings[number] : nullptr;
 }
 
-// Runs inside hooks, where no exception may escape; an allocation failure counts as missing.
-bool copyGameText(OptionText& text) {
-    if (!text.gameTextNumber) return true;
-    const wchar_t* string = gameTextString(text.gameTextNumber);
+// Sets text from the source of the game's language. Runs inside hooks, where no
+// exception may escape; an allocation failure counts as missing.
+bool resolveText(OptionText& text, bool japanese) {
+    const TextSource& source = japanese ? text.japanese : text.english;
+    const wchar_t* string = source.gameTextNumber ? gameTextString(source.gameTextNumber) : source.string.c_str();
     if (!string) return false;
     try {
         text.text = string;
@@ -185,21 +196,24 @@ bool copyGameText(OptionText& text) {
     return true;
 }
 
-// Fills every game text of every page, all at once, so that no pointer the
-// game keeps is ever moved afterwards. False if the game texts are not loaded.
-bool copyGameTexts() {
-    if (hostRegistry.gameTextsCopied) return true;
+// Resolves every text of every page, all at once, so that no pointer the game
+// keeps is ever moved afterwards. False if the game texts are not loaded.
+bool resolveTexts() {
+    if (hostRegistry.textsResolved) return true;
+    const bool japanese = menusInJapanese();
     for (OptionsPageDefinition& page : hostRegistry.pages) {
-        if (!copyGameText(page.title)) return false;
+        if (!resolveText(page.title, japanese)) return false;
         for (OptionsItemDefinition& item : page.items) {
-            if (!copyGameText(item.label)) return false;
+            if (!resolveText(item.label, japanese)) return false;
             for (OptionText& choice : item.choices) {
-                if (!copyGameText(choice)) return false;
+                if (!resolveText(choice, japanese)) return false;
             }
         }
     }
     for (OptionsPageDefinition& page : hostRegistry.pages) bindChoicePointers(page);
-    hostRegistry.gameTextsCopied = true;
+    hostRegistry.textsResolved = true;
+    registryLog(nullptr, japanese ? "Mod options pages use the Japanese texts (game language 0)"
+                                  : "Mod options pages use the English texts (game language other than 0)");
     return true;
 }
 
@@ -337,7 +351,7 @@ GameMenuRow* __cdecl addPauseMenuPages(void* menu) {
         logOnce(loggedPauseMenuSkipped, "pause menu: the options rows are not as expected; Mod options pages not added");
         return nullptr;
     }
-    if (!copyGameTexts()) {
+    if (!resolveTexts()) {
         logOnce(loggedPauseMenuSkipped, "pause menu: a game text of a Mod options page is missing; Mod options pages not added");
         return nullptr;
     }
@@ -404,7 +418,7 @@ void* createInitializedTitlePage(uint32_t definition) {
 void __cdecl addTitlePages(void* parent) {
     void* list = field<void*>(parent, titleParentList);
     if (!field<uint8_t>(parent, titleParentStarted) || !list) return;
-    if (!copyGameTexts()) {
+    if (!resolveTexts()) {
         logOnce(loggedTitleSkipped, "title options: a game text of a Mod options page is missing; Mod options pages not added");
         return;
     }
@@ -779,6 +793,16 @@ bool claimSites(const HookSite (&sites)[N]) {
     return true;
 }
 
+// mov eax,[0x9e9680] (0x537b1d) ... mov [eax+0x4c],ebx (0x537b28): where the game stores the
+// menu language that menusInJapanese reads.
+bool languageCodeMatches() {
+    const uint8_t readManager = 0xa1;
+    const uint8_t storeLanguage[] = {0x89, 0x58, gameTextLanguage};
+    return *reinterpret_cast<const uint8_t*>(gameAddress(0x537b1d)) == readManager &&
+        *reinterpret_cast<const uint32_t*>(gameAddress(0x537b1e)) == gameAddress(gameTextManager) &&
+        !memcmp(reinterpret_cast<void*>(gameAddress(0x537b28)), storeLanguage, sizeof(storeLanguage));
+}
+
 bool exeTimestampMatches(HMODULE game) {
     auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(game);
     auto nt = reinterpret_cast<const IMAGE_NT_HEADERS32*>(reinterpret_cast<const uint8_t*>(game) + dos->e_lfanew);
@@ -824,7 +848,8 @@ void prepareGameHooks(HMODULE game, HMODULE owner) {
         registryLog(nullptr, "this game exe is not the supported version; options pages, onFrame and onOptionsSaved are unavailable");
         return;
     }
-    hostRegistry.supported.options = sitesMatch(optionsMenuSites) && claimSites(optionsMenuSites);
+    hostRegistry.supported.options =
+        sitesMatch(optionsMenuSites) && languageCodeMatches() && claimSites(optionsMenuSites);
     hostRegistry.supported.frame = sitesMatch(frameSites) && claimSites(frameSites);
     hostRegistry.supported.optionsSaved = sitesMatch(optionsSavedSites) && claimSites(optionsSavedSites);
     if (!hostRegistry.supported.options) registryLog(nullptr, "the options menu code is not as expected; options pages are unavailable");
