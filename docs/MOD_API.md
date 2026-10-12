@@ -80,11 +80,11 @@ Contents of `ModContext`:
 
 ## Options pages
 
-`addOptionsPage` adds a page after the game's five options pages, both in the title screen's options and in the pause menu's 各種設定. The menus scroll, so many pages can be added; each page has no scrolling.
+`addOptionsPage` adds a page after the game's five options pages, both in the title screen's options and in the pause menu's 各種設定. The menus scroll, so the number of pages has no limit; each page has no scrolling.
 
 | Limit                          | Value                                    |
 | ------------------------------ | ---------------------------------------- |
-| Pages (all Mods together)      | 16 (`wots4::maxOptionsPages`)            |
+| Pages                          | No limit                                 |
 | Items per page                 | 1 to 8 (`wots4::maxOptionsItems`); the page's frame holds 8 rows |
 | Choices of a choice item       | 2 to 10 (`wots4::maxOptionChoices`)      |
 | Title                          | Up to 63 characters                      |

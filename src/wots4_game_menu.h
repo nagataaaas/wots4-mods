@@ -3,6 +3,7 @@
 // Mod pages to them. No game code is called here, so tests can use plain memory.
 #include <wots4/mod_api.h>
 #include <cstring>
+#include <vector>
 
 namespace wots4::game {
 
@@ -24,10 +25,12 @@ constexpr uint32_t optionsMenuText = 101;      // "各種設定"
 constexpr uint32_t firstOptionsPageText = 102;  // "各種設定" page, the first child of row 17
 constexpr uint32_t lastOptionsPageText = 104;   // "表示設定" page, the last child of row 17
 // Far above the number of GameTextUI entries, so a game text never uses it.
+// Every number from here to 0xffffffff is a Mod title, which leaves room for
+// more pages than memory could hold.
 constexpr uint32_t modTitleTextBase = 0x7fff0000;
 
 inline bool isModTitleText(uint32_t text) {
-    return text >= modTitleTextBase && text < modTitleTextBase + maxOptionsPages;
+    return text >= modTitleTextBase;
 }
 
 // True if every link of the rows points to the start of a row in the table.
@@ -68,7 +71,8 @@ inline int lastOptionsPageRow(const GameMenuRow* rows, uint32_t count) {
 // pages[i] becomes the child of the new row i. False leaves target unspecified.
 inline bool appendOptionsRows(const GameMenuRow* source, uint32_t count, GameMenuRow* target,
     void* const* pages, uint32_t pageCount) {
-    if (!target || target == source || !pages || pageCount == 0 || pageCount > maxOptionsPages) return false;
+    if (!target || target == source || !pages || pageCount == 0) return false;
+    if (pageCount > UINT32_MAX - modTitleTextBase) return false;
     if (!isUnchangedGameMenu(source, count)) return false;
     const int lastRow = lastOptionsPageRow(source, count);
     if (lastRow < 0) return false;
@@ -106,10 +110,11 @@ constexpr uint32_t titleParentPagesOffset = 0x64;
 constexpr uint32_t gameOptionsPageCount = 5;
 constexpr uint32_t maxTitleParents = 4;  // The game makes one at a time; a few spare slots
 
+// The pages vector grows only while the parent initializes; per-frame reads
+// only index into it.
 struct TitlePages {
-    uintptr_t parent;  // 0 when the slot is free
-    uint32_t count;
-    uintptr_t pages[maxOptionsPages];
+    uintptr_t parent = 0;  // 0 when the slot is free
+    std::vector<uintptr_t> pages;
 };
 
 struct TitlePageTable {
@@ -126,7 +131,8 @@ struct TitlePageTable {
         if (!parent || find(parent)) return nullptr;
         for (TitlePages& entry : parents) {
             if (!entry.parent) {
-                entry = {parent, 0, {}};
+                entry.parent = parent;
+                entry.pages.clear();
                 return &entry;
             }
         }
@@ -135,14 +141,16 @@ struct TitlePageTable {
 
     void remove(uintptr_t parent) {
         for (TitlePages& entry : parents) {
-            if (entry.parent == parent) entry = {};
+            if (entry.parent != parent) continue;
+            entry.parent = 0;
+            entry.pages.clear();
         }
     }
 
     // Called on every frame the options menu is open, so it stays a few loads.
     uint32_t pageCount(uintptr_t parent) const {
         const TitlePages* entry = find(parent);
-        return gameOptionsPageCount + (entry ? entry->count : 0);
+        return gameOptionsPageCount + (entry ? static_cast<uint32_t>(entry->pages.size()) : 0);
     }
 
     uintptr_t pageAt(uintptr_t parent, uint32_t index) const {
@@ -150,7 +158,7 @@ struct TitlePageTable {
             return reinterpret_cast<const uintptr_t*>(parent + titleParentPagesOffset)[index];
         const TitlePages* entry = find(parent);
         const uint32_t extra = index - gameOptionsPageCount;
-        return entry && extra < entry->count ? entry->pages[extra] : 0;
+        return entry && extra < entry->pages.size() ? entry->pages[extra] : 0;
     }
 };
 

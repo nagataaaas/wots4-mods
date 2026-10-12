@@ -14,6 +14,8 @@
 #include "wots4_mod_loader.h"
 #include <MinHook.h>
 #include <cstdio>
+#include <memory>
+#include <new>
 
 namespace wots4::game {
 namespace {
@@ -170,11 +172,16 @@ const wchar_t* gameTextString(uint32_t number) {
     return strings ? strings[number] : nullptr;
 }
 
+// Runs inside hooks, where no exception may escape; an allocation failure counts as missing.
 bool copyGameText(OptionText& text) {
     if (!text.gameTextNumber) return true;
     const wchar_t* string = gameTextString(text.gameTextNumber);
     if (!string) return false;
-    text.text = string;
+    try {
+        text.text = string;
+    } catch (const std::bad_alloc&) {
+        return false;
+    }
     return true;
 }
 
@@ -335,18 +342,23 @@ GameMenuRow* __cdecl addPauseMenuPages(void* menu) {
         return nullptr;
     }
 
-    void* pages[maxOptionsPages] = {};
+    // No exception may leave a hook, so allocate this list without throwing.
+    std::unique_ptr<void*[]> pages(new (std::nothrow) void*[pageCount]);
+    if (!pages) {
+        logOnce(loggedPauseMenuSkipped, "pause menu: could not allocate the list of Mod options pages; Mod options pages not added");
+        return nullptr;
+    }
     for (uint32_t i = 0; i < pageCount; ++i) {
         pages[i] = createModPage(i);
         if (pages[i]) continue;
-        destroyPages(pages, i);
+        destroyPages(pages.get(), i);
         logOnce(loggedPauseMenuSkipped, "pause menu: could not allocate a Mod options page; Mod options pages not added");
         return nullptr;
     }
     auto target = static_cast<GameMenuRow*>(allocateGameArray((count + pageCount) * sizeof(GameMenuRow)));
-    if (!target || !appendOptionsRows(rows, count, target, pages, pageCount)) {
+    if (!target || !appendOptionsRows(rows, count, target, pages.get(), pageCount)) {
         if (target) releaseGameArray(target);
-        destroyPages(pages, pageCount);
+        destroyPages(pages.get(), pageCount);
         logOnce(loggedPauseMenuSkipped, "pause menu: could not extend the menu rows; Mod options pages not added");
         return nullptr;
     }
@@ -401,6 +413,14 @@ void __cdecl addTitlePages(void* parent) {
         logOnce(loggedTitleSkipped, "title options: too many options screens at once; Mod options pages not added");
         return;
     }
+    // No exception may leave a hook: reserve once, then push_back never allocates.
+    try {
+        entry->pages.reserve(hostRegistry.pages.size());
+    } catch (const std::bad_alloc&) {
+        titlePages.remove(reinterpret_cast<uintptr_t>(parent));
+        logOnce(loggedTitleSkipped, "title options: could not allocate the list of Mod options pages; Mod options pages not added");
+        return;
+    }
     const auto addPage = reinterpret_cast<void(__thiscall*)(void*, uint32_t, const wchar_t*)>(gameAddress(titleListAdd));
     for (uint32_t i = 0; i < hostRegistry.pages.size(); ++i) {
         void* page = createInitializedTitlePage(i);
@@ -409,11 +429,11 @@ void __cdecl addTitlePages(void* parent) {
             continue;
         }
         // The list position is the page index that the redirected reads use.
-        entry->pages[entry->count] = reinterpret_cast<uintptr_t>(page);
-        addPage(list, gameOptionsPageCount + entry->count, hostRegistry.pages[i].title.text.c_str());
-        ++entry->count;
+        const auto listIndex = gameOptionsPageCount + static_cast<uint32_t>(entry->pages.size());
+        entry->pages.push_back(reinterpret_cast<uintptr_t>(page));
+        addPage(list, listIndex, hostRegistry.pages[i].title.text.c_str());
     }
-    if (entry->count) {
+    if (!entry->pages.empty()) {
         layoutTitleList(list);
         logOnce(loggedTitleAdded, "title options: Mod options pages added");
     }
@@ -423,7 +443,7 @@ void __cdecl addTitlePages(void* parent) {
 void __cdecl releaseTitlePages(void* parent) {
     const TitlePages* entry = titlePages.find(reinterpret_cast<uintptr_t>(parent));
     if (!entry) return;
-    for (uint32_t i = 0; i < entry->count; ++i) destroyGameObject(reinterpret_cast<void*>(entry->pages[i]));
+    for (uintptr_t page : entry->pages) destroyGameObject(reinterpret_cast<void*>(page));
     titlePages.remove(reinterpret_cast<uintptr_t>(parent));
 }
 

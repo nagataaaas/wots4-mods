@@ -361,12 +361,12 @@ void checkTitleScreen() {
     const TitlePages* entry = titlePages.find(reinterpret_cast<uintptr_t>(parent));
     check("title: game texts copied once loaded", hostRegistry.gameTextsCopied &&
         hostRegistry.pages[1].title.text == L"Page B" && hostRegistry.pages[0].items[0].label.text == L"Connect");
-    check("title: two Mod pages recorded for the parent", entry && entry->count == 2);
+    check("title: two Mod pages recorded for the parent", entry && entry->pages.size() == 2);
     check("title: list rows 5 and 6 carry the titles", listEntries.size() == 2 && listEntries[0].index == 5 &&
         listEntries[0].text == L"Page A" && listEntries[1].index == 6 && listEntries[1].text == L"Page B");
     check("title: the list is laid out again once", layoutCalls == 1 && mouseCalls == 1);
     check("title: each page read its values once", modA.reads == 1 && modB.reads == 1);
-    if (!entry || entry->count != 2) return;
+    if (!entry || entry->pages.size() != 2) return;
     auto pageA = reinterpret_cast<void*>(entry->pages[0]);
     auto pageB = reinterpret_cast<void*>(entry->pages[1]);
     checkModPage(pageA, "page A", true);

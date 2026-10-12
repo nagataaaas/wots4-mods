@@ -6,6 +6,7 @@
 #include <wots4/mod_api.h>
 #include <algorithm>
 #include <cwchar>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -99,7 +100,6 @@ inline const char* optionsPageProblem(const wchar_t* title, const OptionItem* it
     const OptionsPageCallbacks* callbacks) {
     if (!hostRegistry.registrationOpen) return "it was called outside Wots4ModInitialize";
     if (!hostRegistry.supported.options) return "this version of the game is not supported";
-    if (hostRegistry.pages.size() >= maxOptionsPages) return "all 16 options pages are already used";
     if (!isValidText(title, maxOptionsTitleChars)) return "the title is empty or longer than 63 characters";
     if (!items || count == 0 || count > maxOptionsItems) return "a page needs 1 to 8 items";
     if (!callbacks || !callbacks->read || !callbacks->changed) return "the read and changed callbacks are required";
@@ -131,12 +131,18 @@ inline BOOL WINAPI addOptionsPage(HMODULE owner, const wchar_t* title, const Opt
         registryLog(owner, std::string("addOptionsPage refused: ") + problem);
         return FALSE;
     }
-    // Reserved once, so pages never move after the game got pointers into them.
-    if (hostRegistry.pages.empty()) hostRegistry.pages.reserve(maxOptionsPages);
-    OptionsPageDefinition page{owner, copyText(title), {}, *callbacks};
-    for (uint32_t i = 0; i < count; ++i) page.items.push_back(copyOptionItem(items[i]));
-    hostRegistry.pages.push_back(std::move(page));
-    bindChoicePointers(hostRegistry.pages.back());
+    // Pages may move while the Mods register; the game gets pointers into them
+    // only after registration closed, so binding again each time is enough.
+    // No exception may cross the C ABI back into the Mod.
+    try {
+        OptionsPageDefinition page{owner, copyText(title), {}, *callbacks};
+        for (uint32_t i = 0; i < count; ++i) page.items.push_back(copyOptionItem(items[i]));
+        hostRegistry.pages.push_back(std::move(page));
+        for (OptionsPageDefinition& registered : hostRegistry.pages) bindChoicePointers(registered);
+    } catch (const std::bad_alloc&) {
+        registryLog(owner, "addOptionsPage refused: out of memory");
+        return FALSE;
+    }
     return TRUE;
 }
 
@@ -151,8 +157,13 @@ inline BOOL addGameEventHandler(std::vector<GameEventHandler>& handlers, bool su
         registryLog(owner, std::string(functionName) + " refused: " + problem);
         return FALSE;
     }
-    if (handlers.empty()) handlers.reserve(maxGameEventHandlers);
-    handlers.push_back({owner, callback, context});
+    try {
+        if (handlers.empty()) handlers.reserve(maxGameEventHandlers);
+    } catch (const std::bad_alloc&) {
+        registryLog(owner, std::string(functionName) + " refused: out of memory");
+        return FALSE;
+    }
+    handlers.push_back({owner, callback, context});  // Within the reserved capacity
     return TRUE;
 }
 

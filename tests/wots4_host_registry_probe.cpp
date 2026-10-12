@@ -84,8 +84,16 @@ void checkPageLimits() {
     OptionsPageCallbacks noRead{nullptr, nullptr, ignoreChange};
     check("missing read callback refused", !addOptionsPage(mod, L"R", items, 1, &noRead));
 
-    while (hostRegistry.pages.size() < maxOptionsPages) addOptionsPage(mod, L"Fill", items, 1, &callbacks);
-    check("17th page refused", !addOptionsPage(mod, L"Over", items, 1, &callbacks));
+    bool allAccepted = true;
+    while (hostRegistry.pages.size() < 100) allAccepted &= addOptionsPage(mod, L"Fill", items, 2, &callbacks) != FALSE;
+    check("100 pages accepted; the number of pages has no limit", allAccepted);
+    bool pointersFollow = true;
+    for (const OptionsPageDefinition& page : hostRegistry.pages) {
+        for (const OptionsItemDefinition& item : page.items) {
+            for (size_t i = 0; i < item.choices.size(); ++i) pointersFollow &= item.choicePointers[i] == item.choices[i].text.c_str();
+        }
+    }
+    check("choice pointers follow every page the vector moved", pointersFollow);
 }
 
 void checkGameTexts() {
@@ -163,11 +171,13 @@ void makeGameMenu(GameMenuRow* rows) {
 }
 
 void checkPauseMenuRows() {
+    constexpr uint32_t manyPages = 100;
     GameMenuRow source[gameMenuRowCount];
-    GameMenuRow target[gameMenuRowCount + maxOptionsPages + 1];
+    std::vector<GameMenuRow> targetRows(gameMenuRowCount + manyPages);
+    GameMenuRow* target = targetRows.data();
     makeGameMenu(source);
-    void* pages[maxOptionsPages];
-    for (uint32_t i = 0; i < maxOptionsPages; ++i) pages[i] = reinterpret_cast<void*>(0x9000 + i);
+    void* pages[manyPages];
+    for (uint32_t i = 0; i < manyPages; ++i) pages[i] = reinterpret_cast<void*>(0x9000 + i);
 
     check("the builder's table is recognized", isUnchangedGameMenu(source, gameMenuRowCount));
     check("3 rows appended", appendOptionsRows(source, gameMenuRowCount, target, pages, 3));
@@ -184,8 +194,11 @@ void checkPauseMenuRows() {
         target[25].text == modTitleTextBase && target[27].text == modTitleTextBase + 2 && target[26].state == -1);
     check("the new table is recognized as changed", !isUnchangedGameMenu(target, gameMenuRowCount + 3));
 
-    check("16 rows appended", appendOptionsRows(source, gameMenuRowCount, target, pages, maxOptionsPages));
-    check("17 rows refused", !appendOptionsRows(source, gameMenuRowCount, target, pages, maxOptionsPages + 1));
+    check("100 rows appended", appendOptionsRows(source, gameMenuRowCount, target, pages, manyPages));
+    const uint32_t lastRow = gameMenuRowCount + manyPages - 1;
+    check("the 100th row ends the options branch with its page and number",
+        target[lastRow].next == 0 && target[lastRow].previous == at(lastRow - 1) &&
+        target[lastRow].child == 0x9000 + manyPages - 1 && target[lastRow].text == modTitleTextBase + manyPages - 1);
     check("zero rows refused", !appendOptionsRows(source, gameMenuRowCount, target, pages, 0));
 
     GameMenuRow changed[gameMenuRowCount];
@@ -197,8 +210,8 @@ void checkPauseMenuRows() {
     changed[3].next = 0x1234;
     check("a link outside the table is refused", !appendOptionsRows(changed, gameMenuRowCount, target, pages, 1));
     check("a table with another row count is refused", !appendOptionsRows(source, 24, target, pages, 1));
-    check("mod title numbers", isModTitleText(modTitleTextBase + 15) && !isModTitleText(modTitleTextBase + 16) &&
-        !isModTitleText(104));
+    check("mod title numbers", isModTitleText(modTitleTextBase) && isModTitleText(UINT32_MAX) &&
+        !isModTitleText(modTitleTextBase - 1) && !isModTitleText(104));
 }
 
 void checkTitlePages() {
@@ -212,13 +225,15 @@ void checkTitlePages() {
     check("no page after the game's", table.pageAt(parent, 5) == 0);
 
     TitlePages* entry = table.add(parent);
-    entry->pages[0] = 0x8000;
-    entry->pages[1] = 0x8001;
-    entry->count = 2;
     check("a parent is added once", entry && !table.add(parent));
+    if (!entry) return;
+    entry->pages = {0x8000, 0x8001};
     check("count includes Mod pages", table.pageCount(parent) == 7);
     check("Mod pages come from the table", table.pageAt(parent, 5) == 0x8000 && table.pageAt(parent, 6) == 0x8001);
     check("past the Mod pages is null", table.pageAt(parent, 7) == 0);
+    for (uintptr_t page = 0x8002; page < 0x8000 + 100; ++page) entry->pages.push_back(page);
+    check("100 Mod pages: count and the last page", table.pageCount(parent) == 105 &&
+        table.pageAt(parent, 104) == 0x8063 && table.pageAt(parent, 105) == 0);
 
     uintptr_t others[maxTitleParents][0x84 / 4] = {};
     for (uint32_t i = 1; i < maxTitleParents; ++i) table.add(reinterpret_cast<uintptr_t>(others[i]));
