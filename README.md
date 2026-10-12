@@ -6,12 +6,18 @@ Steam 版『侍道4』（Way of the Samurai 4）向けの ModLoader です。
 
 ゲームのフォルダに置く `dinput8.dll` で、ゲームが起動すると `mods/<名前>/mod.dll` を読み込みます。
 
-公開している Mod は、まだありません。
+## Mod
+
+| Mod | 内容 |
+| --- | --- |
+| [unofficial_patch](https://github.com/nagataaaas/wots4-unofficial-patch) | 非公式パッチ。クラッシュやバグを直します |
+| [harakiri](https://github.com/nagataaaas/wots4-harakiri) | 難易度「一撃死」を追加します |
+| [debugger](https://github.com/nagataaaas/wots4-debugger) | Mod を作るためのデバッグツール |
 
 ## 使う人向け
 
 [Releases](../../releases) から `wots4-modloader-<版>.zip` をダウンロードし、[docs/INSTALL.md](docs/INSTALL.md) の手順で入れてください。
-Mod は、それぞれの Mod のリポジトリで配ります。
+Mod は、上の表のそれぞれのリポジトリで配ります。
 
 ## 作る人向け
 

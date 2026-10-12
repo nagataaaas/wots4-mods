@@ -6,12 +6,18 @@ A ModLoader for the Steam version of Way of the Samurai 4.
 
 It is a `dinput8.dll` placed in the game folder, and loads `mods/<name>/mod.dll` when the game starts.
 
-No Mods have been published yet.
+## Mods
+
+| Mod | What it does |
+| --- | --- |
+| [unofficial_patch](https://github.com/nagataaaas/wots4-unofficial-patch) | An unofficial patch that fixes crashes and bugs |
+| [harakiri](https://github.com/nagataaaas/wots4-harakiri) | Adds a "Harakiri" (one-hit death) difficulty |
+| [debugger](https://github.com/nagataaaas/wots4-debugger) | A debugging tool for making Mods |
 
 ## For users
 
 Download `wots4-modloader-<version>.zip` from [Releases](../../releases) and install it following [docs/INSTALL.md](docs/INSTALL.md).
-Each Mod is distributed from its own repository.
+Each Mod is distributed from its own repository in the table above.
 
 ## For developers
 
