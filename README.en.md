@@ -4,20 +4,20 @@
 
 A ModLoader for the Steam version of Way of the Samurai 4.
 
-It is a `dinput8.dll` placed in the game folder, and loads `mods/<name>/mod.dll` when the game starts.
+It is a `dinput8.dll` that you place in the game folder. When the game starts, it loads `mods/<name>/mod.dll`.
 
 ## Mods
 
 | Mod | What it does |
 | --- | --- |
-| [unofficial_patch](https://github.com/nagataaaas/wots4-unofficial-patch) | An unofficial patch that fixes crashes and bugs |
-| [harakiri](https://github.com/nagataaaas/wots4-harakiri) | Adds a "Harakiri" (one-hit death) difficulty |
-| [debugger](https://github.com/nagataaaas/wots4-debugger) | A debugging tool for making Mods |
+| [unofficial_patch](https://github.com/nagataaaas/wots4-unofficial-patch) | An unofficial patch that fixes crashes and bugs. |
+| [harakiri](https://github.com/nagataaaas/wots4-harakiri) | Adds a "Harakiri" (one-hit death) difficulty. |
+| [debugger](https://github.com/nagataaaas/wots4-debugger) | A debugging tool for making Mods. |
 
 ## For users
 
 Download `wots4-modloader-<version>.zip` from [Releases](../../releases) and install it following [docs/INSTALL.md](docs/INSTALL.md).
-Each Mod is distributed from its own repository in the table above.
+Get each Mod from its repository, linked in the table above.
 
 ## For developers
 
@@ -45,7 +45,6 @@ make loader                # Build only the ModLoader and copy it to GAME_DIR
 ```
 
 - `make install <name>` also accepts `loader` as a name (e.g. `make install loader <name>`).
-
 - DLLs are always overwritten. Files such as `config.ini` are not overwritten if they already exist in the game folder (so settings changed in game are kept).
 - DLLs that are loaded cannot be overwritten while the game is running.
 

@@ -4,20 +4,20 @@
 
 Steam 版『侍道4』（Way of the Samurai 4）向けの ModLoader です。
 
-ゲームのフォルダに置く `dinput8.dll` で、ゲームが起動すると `mods/<名前>/mod.dll` を読み込みます。
+`dinput8.dll` としてゲームのフォルダに置くと、ゲームの起動時に `mods/<名前>/mod.dll` を読み込みます。
 
-## Mod
+## Mod 一覧
 
 | Mod | 内容 |
 | --- | --- |
-| [unofficial_patch](https://github.com/nagataaaas/wots4-unofficial-patch) | 非公式パッチ。クラッシュやバグを直します |
-| [harakiri](https://github.com/nagataaaas/wots4-harakiri) | 難易度「一撃死」を追加します |
-| [debugger](https://github.com/nagataaaas/wots4-debugger) | Mod を作るためのデバッグツール |
+| [unofficial_patch](https://github.com/nagataaaas/wots4-unofficial-patch) | クラッシュやバグを直す非公式パッチです。 |
+| [harakiri](https://github.com/nagataaaas/wots4-harakiri) | 難易度「一撃死」を追加します。 |
+| [debugger](https://github.com/nagataaaas/wots4-debugger) | Mod を作るときに使うデバッグツールです。 |
 
 ## 使う人向け
 
 [Releases](../../releases) から `wots4-modloader-<版>.zip` をダウンロードし、[docs/INSTALL.md](docs/INSTALL.md) の手順で入れてください。
-Mod は、上の表のそれぞれのリポジトリで配ります。
+Mod は、上の表から各 Mod のリポジトリを開いて入手してください。
 
 ## 作る人向け
 
@@ -45,7 +45,6 @@ make loader                # ModLoader だけをビルドして GAME_DIR へコ�
 ```
 
 - `make install <名前>` の名前には `loader` も書けます（例：`make install loader <名前>`）。
-
 - DLL は毎回上書きします。`config.ini` などは、ゲームのフォルダにすでにあれば上書きしません（ゲーム内で変えた設定を消さないため）。
 - ゲームを起動したままだと、読み込まれている DLL は上書きできません。
 
