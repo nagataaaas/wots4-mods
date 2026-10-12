@@ -70,6 +70,10 @@ size_t pageSize(uint32_t itemCount) {
 constexpr uint32_t pageLayoutDescriptor = 0x08;
 constexpr uint32_t pageLayoutSlots = 0x0c;     // Array, one slot per layout of the descriptor
 constexpr uint32_t pageAnimationSlots = 0x10;  // Array, one slot per animation
+// Copied into each slot when the slots are made; the loader (0x5b5f40) looks the
+// files up only in these archives. Each page's constructor writes its own values.
+constexpr uint32_t pageArchives = 0x24;  // Bit set of the game's resource archives
+constexpr uint32_t pageSlotValue = 0x28;
 constexpr uint32_t pageLayoutsLoaded = 0x2c;   // byte
 constexpr uint32_t pageItemsBegin = 0x4c;      // Item vector: begin, end, end of the capacity
 constexpr uint32_t pageItemsEnd = 0x50;
@@ -543,7 +547,8 @@ struct LayoutAnimation {
 };
 static_assert(sizeof(LayoutAnimation) == 0x6c, "the game's animation entries are 0x6c bytes");
 struct LayoutDescriptor {
-    uint32_t drawValues[2];  // The constructor writes the same values to the page's +0x24 and +0x28
+    uint32_t archives;   // The page constructor writes the same values to pageArchives
+    uint32_t slotValue;  // and pageSlotValue
     const LayoutFile* layouts;
     uint32_t layoutCount;
     const LayoutAnimation* animations;
@@ -615,7 +620,10 @@ void prepareScrollingLayouts() {
     memcpy(scrollingAnimations, base.animations, optionsPageAnimationCount * sizeof(LayoutAnimation));
     memcpy(scrollingAnimations + upArrowShown, mapping.animations + controlMappingFirstArrowAnimation,
         4 * sizeof(LayoutAnimation));
-    scrollingLayouts = {{base.drawValues[0], base.drawValues[1]}, scrollingLayoutFiles, scrollingLayoutCount,
+    // The arrows' files are not in the base page's archives (0x10), but in the
+    // control mapping page's (0x31); without them, loading stops at the first arrow
+    // and the base initialize plays an animation that was never loaded.
+    scrollingLayouts = {base.archives | mapping.archives, base.slotValue, scrollingLayoutFiles, scrollingLayoutCount,
         scrollingAnimations, scrollingAnimationCount};
 }
 
@@ -641,12 +649,14 @@ bool slotsMade(void* page, uint32_t array, uint32_t count) {
     return true;
 }
 
-// The base constructor made slots for its own descriptor, 2 layout slots fixed
-// in its code; the page's initialize loads as many as the descriptor names.
+// The base constructor made slots for its own descriptor and archives, 2 layout
+// slots fixed in its code; the page's initialize loads as many as the descriptor names.
 bool useScrollingLayouts(void* page) {
     releaseSlots(releaseLayoutSlots, page);
     releaseSlots(releaseAnimationSlots, page);
     field<const LayoutDescriptor*>(page, pageLayoutDescriptor) = &scrollingLayouts;
+    field<uint32_t>(page, pageArchives) = scrollingLayouts.archives;
+    field<uint32_t>(page, pageSlotValue) = scrollingLayouts.slotValue;
     createSlots(createLayoutSlots, page, scrollingLayoutCount);
     createSlots(createAnimationSlots, page, scrollingAnimationCount);
     if (!slotsMade(page, pageLayoutSlots, scrollingLayoutCount) ||

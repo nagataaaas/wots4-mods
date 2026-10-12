@@ -135,7 +135,7 @@ int wmain(int argc, wchar_t** argv) {
         !strcmp(scrollingAnimations[2].name, "pl_00") && !strcmp(scrollingAnimations[upArrowShown].file, "u_sign.lyanim") &&
         !strcmp(scrollingAnimations[downArrowMoved].file, "u_sign_act.lyanim") &&
         scrollingAnimations[downArrowMoved].layout == static_cast<int32_t>(downArrowLayout) &&
-        scrollingLayouts.drawValues[0] == 0x10 && scrollingLayouts.drawValues[1] == 9);
+        scrollingLayouts.archives == 0x31 && scrollingLayouts.slotValue == 9);
     check("the scrolling page methods replace only update, draw and input",
         scrollingPageMethods[updateSlot / 4] == reinterpret_cast<uintptr_t>(scrollingUpdateMethod) &&
         scrollingPageMethods[drawSlot / 4] == reinterpret_cast<uintptr_t>(scrollingDrawMethod) &&

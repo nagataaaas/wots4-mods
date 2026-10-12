@@ -87,10 +87,18 @@ constexpr uint32_t layoutSlotSize = 0x40;
 constexpr uint32_t animationSlotSize = 0x30;
 unsigned slotSetsMade, slotSetsReleased;
 
-void __cdecl fakeMakeSlots(void* page, uint32_t array, uint32_t countOffset, uint32_t count, uint32_t slotSize) {
+// Like the game, each slot keeps the archives its file is looked up in.
+constexpr uint32_t layoutSlotArchives = 0x14;
+constexpr uint32_t animationSlotArchives = 0x04;
+
+void __cdecl fakeMakeSlots(void* page, uint32_t array, uint32_t countOffset, uint32_t count, uint32_t slotSize,
+    uint32_t archivesOffset) {
     ++slotSetsMade;
     auto slots = static_cast<uint8_t**>(malloc(count * sizeof(uint8_t*)));
-    for (uint32_t i = 0; i < count; ++i) slots[i] = static_cast<uint8_t*>(calloc(1, slotSize));
+    for (uint32_t i = 0; i < count; ++i) {
+        slots[i] = static_cast<uint8_t*>(calloc(1, slotSize));
+        field<uint32_t>(slots[i], archivesOffset) = field<uint32_t>(page, pageArchives);
+    }
     field<uint8_t**>(page, array) = slots;
     field<uint16_t>(page, countOffset) = static_cast<uint16_t>(count);
 }
@@ -106,10 +114,10 @@ void __cdecl fakeFreeSlots(void* page, uint32_t array, uint32_t countOffset) {
 }
 
 void __cdecl fakeMakeLayoutSlots(void* page, uint32_t count) {
-    fakeMakeSlots(page, pageLayoutSlots, slotCountsOffset, count, layoutSlotSize);
+    fakeMakeSlots(page, pageLayoutSlots, slotCountsOffset, count, layoutSlotSize, layoutSlotArchives);
 }
 void __cdecl fakeMakeAnimationSlots(void* page, uint32_t count) {
-    fakeMakeSlots(page, pageAnimationSlots, slotCountsOffset + 2, count, animationSlotSize);
+    fakeMakeSlots(page, pageAnimationSlots, slotCountsOffset + 2, count, animationSlotSize, animationSlotArchives);
 }
 void __cdecl fakeFreeLayoutSlots(void* page) {
     fakeFreeSlots(page, pageLayoutSlots, slotCountsOffset);
@@ -164,22 +172,26 @@ LayoutAnimation animationEntry(const char* name, int32_t layout) {
     return animation;
 }
 
-void writeLayoutDescriptor(uint32_t descriptor, uint32_t files, std::initializer_list<const char*> layouts,
-    uint32_t animations, std::initializer_list<LayoutAnimation> entries) {
+constexpr uint32_t baseArchives = 0x10;     // As in the game's descriptors
+constexpr uint32_t mappingArchives = 0x31;
+
+void writeLayoutDescriptor(uint32_t descriptor, uint32_t archives, uint32_t files,
+    std::initializer_list<const char*> layouts, uint32_t animations, std::initializer_list<LayoutAnimation> entries) {
     auto file = reinterpret_cast<LayoutFile*>(fake(files));
     for (const char* layout : layouts) strcpy_s((file++)->name, layout);
     memcpy(fake(animations), entries.begin(), entries.size() * sizeof(LayoutAnimation));
-    const LayoutDescriptor written{{0x10, 9}, reinterpret_cast<const LayoutFile*>(fake(files)),
+    const LayoutDescriptor written{archives, 9, reinterpret_cast<const LayoutFile*>(fake(files)),
         static_cast<uint32_t>(layouts.size()), reinterpret_cast<const LayoutAnimation*>(fake(animations)),
         static_cast<uint32_t>(entries.size())};
     memcpy(fake(descriptor), &written, sizeof(written));
 }
 
 void writeLayoutDescriptors() {
-    writeLayoutDescriptor(optionsPageLayouts, fakeBaseLayoutFiles, {"u_st_op_kamera.layout", "u_st_op_mpl.layout"},
-        fakeBaseAnimations, {animationEntry("st_fade_in", 0), animationEntry("st_fade_out", 0),
-        animationEntry("pl_00", 1), animationEntry("pl_01", 1)});
-    writeLayoutDescriptor(controlMappingLayouts, fakeMappingLayoutFiles,
+    writeLayoutDescriptor(optionsPageLayouts, baseArchives, fakeBaseLayoutFiles,
+        {"u_st_op_kamera.layout", "u_st_op_mpl.layout"}, fakeBaseAnimations,
+        {animationEntry("st_fade_in", 0), animationEntry("st_fade_out", 0), animationEntry("pl_00", 1),
+        animationEntry("pl_01", 1)});
+    writeLayoutDescriptor(controlMappingLayouts, mappingArchives, fakeMappingLayoutFiles,
         {"u_st_op_kamera.layout", "u_ps_yousi01.layout", "u_sign.layout", "u_sign.layout"}, fakeMappingAnimations,
         {animationEntry("st_fade_in", 0), animationEntry("st_fade_out", 0), animationEntry("sign_white", 2),
         animationEntry("sign_up", 2), animationEntry("sign_white", 3), animationEntry("sign_up", 3)});
@@ -294,6 +306,8 @@ void* __stdcall fakePageConstructor(void* page) {
     field<int32_t>(page, pageCursor) = noCursor;
     // Like the game's constructor: its own descriptor, 2 layout slots, an animation slot per animation.
     field<const void*>(page, pageLayoutDescriptor) = fake(optionsPageLayouts);
+    field<uint32_t>(page, pageArchives) = baseArchives;
+    field<uint32_t>(page, pageSlotValue) = 9;
     fakeMakeLayoutSlots(page, 2);
     fakeMakeAnimationSlots(page, 4);
     return page;
@@ -839,6 +853,11 @@ void checkScrollingPage() {
         field<const LayoutDescriptor*>(page, pageLayoutDescriptor) == &scrollingLayouts &&
         field<uint16_t>(page, slotCountsOffset) == 4 && field<uint16_t>(page, slotCountsOffset + 2) == 8 &&
         slotSetsReleased == slotsReleasedBefore + 2 && slotSetsMade == slotsMadeBefore + 2 + 2);  // Constructor, then ours
+    check("scrolling: every slot looks its file up in the base and control mapping archives",
+        field<uint32_t>(page, pageArchives) == (baseArchives | mappingArchives) &&
+        field<uint32_t>(layoutSlot(page, upArrowLayout), layoutSlotArchives) == (baseArchives | mappingArchives) &&
+        field<uint32_t>(field<uint8_t**>(page, pageAnimationSlots)[0], animationSlotArchives) ==
+            (baseArchives | mappingArchives));
     uint8_t* downArrow = layoutSlot(page, downArrowLayout);
     check("scrolling: the arrows are placed from the screen centre, the down one turned",
         field<float>(layoutSlot(page, upArrowLayout), layoutX) == 755 - 640 &&
