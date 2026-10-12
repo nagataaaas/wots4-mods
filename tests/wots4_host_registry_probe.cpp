@@ -62,9 +62,9 @@ void checkPageLimits() {
         copied.choicePointers[2] == copied.choices[2].text.c_str());
 
     check("no items refused", !addPage(mod, L"Empty", items, 0, &callbacks));
-    OptionItem nine[9] = {toggle, toggle, toggle, toggle, toggle, toggle, toggle, toggle, toggle};
-    check("8 items accepted", addPage(mod, L"Eight", nine, 8, &callbacks));
-    check("9 items refused", !addPage(mod, L"Nine", nine, 9, &callbacks));
+    const std::vector<OptionItem> manyItems(100, toggle);
+    check("100 items accepted (the page scrolls)", addPage(mod, L"Many", manyItems.data(), 100, &callbacks) &&
+        hostRegistry.pages.back().items.size() == 100);
 
     std::wstring longTitle(64, L'x');
     check("63-character title accepted", addPage(mod, longTitle.substr(0, 63).c_str(), items, 1, &callbacks));

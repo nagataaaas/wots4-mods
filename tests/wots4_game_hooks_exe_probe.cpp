@@ -128,6 +128,21 @@ int wmain(int argc, wchar_t** argv) {
     check("the Mod page methods start from the game's page vtable",
         modPageMethods[0] == *reinterpret_cast<uintptr_t*>(gameAddress(optionsPageMethods)) &&
         modPageMethods[buildItemsSlot / 4] == reinterpret_cast<uintptr_t>(buildItemsMethod));
+    check("the scrolling page's descriptor joins the game's options page and control mapping arrows",
+        scrollingLayoutsMatch() && !strcmp(scrollingLayoutFiles[0].name, "u_st_op_kamera.layout") &&
+        !strcmp(scrollingLayoutFiles[1].name, "u_st_op_mpl.layout") &&
+        !strcmp(scrollingLayoutFiles[downArrowLayout].name, "u_sign.layout") &&
+        !strcmp(scrollingAnimations[2].name, "pl_00") && !strcmp(scrollingAnimations[upArrowShown].file, "u_sign.lyanim") &&
+        !strcmp(scrollingAnimations[downArrowMoved].file, "u_sign_act.lyanim") &&
+        scrollingAnimations[downArrowMoved].layout == static_cast<int32_t>(downArrowLayout) &&
+        scrollingLayouts.drawValues[0] == 0x10 && scrollingLayouts.drawValues[1] == 9);
+    check("the scrolling page methods replace only update, draw and input",
+        scrollingPageMethods[updateSlot / 4] == reinterpret_cast<uintptr_t>(scrollingUpdateMethod) &&
+        scrollingPageMethods[drawSlot / 4] == reinterpret_cast<uintptr_t>(scrollingDrawMethod) &&
+        scrollingPageMethods[inputSlot / 4] == reinterpret_cast<uintptr_t>(scrollingInputMethod) &&
+        baseDraw == reinterpret_cast<PageDraw>(gameAddress(0x6458e0)) &&
+        baseInput == reinterpret_cast<PageInput>(gameAddress(0x645f90)) &&
+        scrollingPageMethods[buildItemsSlot / 4] == modPageMethods[buildItemsSlot / 4]);
 
     check("hooks removed", MH_DisableHook(MH_ALL_HOOKS) == MH_OK && MH_Uninitialize() == MH_OK);
     check("every byte of the copy restored", !memcmp(image, original.data(), imageSize));

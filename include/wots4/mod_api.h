@@ -10,9 +10,12 @@ namespace wots4 {
 
 constexpr uint32_t modApiVersion = 2;
 
-// Limits of the options pages. The number of pages has no limit: the menus scroll.
-// A page itself has no scrolling, and its frame holds 8 items.
-constexpr uint32_t maxOptionsItems = 8;       // Per page
+// Limits of the options pages. Neither the number of pages nor the number of items
+// of a page has a limit: the menus scroll, and so does a page with more items than
+// its frame shows, with arrows above and below.
+constexpr uint32_t optionsItemsPerScreen = 8;  // Items a page shows at once
+[[deprecated("a page has no item limit; it scrolls past optionsItemsPerScreen")]]
+constexpr uint32_t maxOptionsItems = optionsItemsPerScreen;
 constexpr uint32_t maxOptionChoices = 10;     // Per choice item
 constexpr uint32_t maxOptionsTitleChars = 63;  // The menu shows at most 63 characters
 constexpr uint32_t maxOptionTextChars = 127;   // Item labels and choices

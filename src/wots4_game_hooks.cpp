@@ -8,6 +8,7 @@
 //   6 rows around the selected one, so any number of rows scrolls.
 // - Title screen: the options parent keeps 5 page pointers inline. Mod pages
 //   live in titlePages, and the 6 places that read a page by index are redirected.
+// A page itself shows 8 items; one with more scrolls (see "scrolling pages").
 // Addresses are virtual addresses of the exe (ImageBase 0x400000).
 #include "wots4_game_hooks.h"
 #include "wots4_game_menu.h"
@@ -49,14 +50,32 @@ constexpr uint32_t titleListAdd = 0x5c84f0;       // thiscall(list, index, text)
 constexpr uint32_t titleListLayout = 0x5c87c0;    // eax = list; places the visible rows
 constexpr uint32_t titleListMouse = 0x5c7e80;     // edi = list; rebuilds the mouse areas
 
-// Page object: the game's 0xa0 bytes, then ours.
+// Page object: the game's 0xa0 bytes, then ours: the extension, one item pointer
+// per item, then one value per item. They are allocated with the page, so the
+// game frees them with it.
 constexpr uint32_t pageBaseSize = 0xa0;
 struct PageExtension {
-    uint32_t definition;                // Index into hostRegistry.pages
-    uint32_t built;                     // 1 once every item was appended
-    uint8_t* items[maxOptionsItems];
+    uint32_t definition;        // Index into hostRegistry.pages
+    uint32_t built;             // 1 once every item was appended
+    uint32_t itemCount;
+    uint32_t firstVisibleItem;  // Scrolling pages: the item in the top row
 };
-constexpr uint32_t pageSize = pageBaseSize + sizeof(PageExtension);
+
+size_t pageSize(uint32_t itemCount) {
+    return pageBaseSize + sizeof(PageExtension) + itemCount * (sizeof(uint8_t*) + sizeof(uint32_t));
+}
+
+// Page fields. The page is an InfoArea (base 0x636410), which loads the layouts
+// and animations its descriptor names into slots.
+constexpr uint32_t pageLayoutDescriptor = 0x08;
+constexpr uint32_t pageLayoutSlots = 0x0c;     // Array, one slot per layout of the descriptor
+constexpr uint32_t pageAnimationSlots = 0x10;  // Array, one slot per animation
+constexpr uint32_t pageLayoutsLoaded = 0x2c;   // byte
+constexpr uint32_t pageItemsBegin = 0x4c;      // Item vector: begin, end, end of the capacity
+constexpr uint32_t pageItemsEnd = 0x50;
+constexpr uint32_t pageItemsCapacityEnd = 0x54;
+constexpr uint32_t pageCursor = 0x58;          // int32: index into the item vector
+constexpr int32_t noCursor = -1;               // No item is selected
 
 // Page vtable slots this file replaces (byte offsets).
 constexpr uint32_t buildItemsSlot = 0x3c;
@@ -66,6 +85,43 @@ constexpr uint32_t pageSpecificSlotB = 0x48;
 constexpr uint32_t itemChangedSlot = 0x58;
 constexpr uint32_t initializeSlot = 0x04;
 constexpr uint32_t updateSlot = 0x08;
+constexpr uint32_t drawSlot = 0x10;   // Scrolling pages
+constexpr uint32_t inputSlot = 0x34;  // Scrolling pages
+
+// Layout slot fields (0x40 bytes, made by 0x5b9d20)
+constexpr uint32_t layoutShown = 0x1a;      // byte
+constexpr uint32_t layoutDrawValue = 0x24;  // Passed to drawLayout
+constexpr uint32_t layoutX = 0x2c;          // float, from the centre of the screen
+constexpr uint32_t layoutY = 0x30;          // float, from the centre of the screen
+constexpr uint32_t layoutRotation = 0x34;   // float, degrees
+
+// InfoArea functions; they take their arguments in registers.
+constexpr uint32_t createLayoutSlots = 0x5b9d20;      // eax = count, esi = page
+constexpr uint32_t releaseLayoutSlots = 0x5b9e50;     // esi = page
+constexpr uint32_t createAnimationSlots = 0x5b9ec0;   // eax = count, esi = page
+constexpr uint32_t releaseAnimationSlots = 0x5b9fb0;  // esi = page
+constexpr uint32_t playAnimation = 0x5ba380;          // ecx = animation, edi = page; shows its layout
+constexpr uint32_t stopAnimation = 0x5ba7e0;          // edi = animation, esi = page; hides its layout
+constexpr uint32_t advanceAnimation = 0x5b8670;       // esi = animation slot
+constexpr uint32_t updateLayout = 0x5bb9d0;           // esi = layout slot
+constexpr uint32_t drawLayout = 0x5bbd70;             // thiscall(layout slot, [slot + layoutDrawValue])
+
+// Input, pointer, screen and sound, as the options pages use them
+constexpr uint32_t inputService = 0x9ebb8c;     // Pointer; the direction queries read its buttons
+constexpr uint32_t inputButtons = 0xc8;         // Pointer the queries dereference
+constexpr uint32_t upPressed = 0x680340;        // eax = input service; al
+constexpr uint32_t downPressed = 0x680280;      // eax = input service; al
+constexpr uint32_t pointerService = 0x9ecf30;   // Pointer
+constexpr uint32_t pointerInUse = 0x44c;        // byte; the game sets it before reading the pointer
+constexpr uint32_t pointerPressed = 0x1c00;     // byte
+constexpr uint32_t pointerPressTime = 0x1c1c;   // int32; the game's buttons count a click below 100
+constexpr int32_t clickTimeLimit = 100;
+constexpr uint32_t readPointer = 0x4f4960;      // ecx = 0, edi = &x, push &y (the caller pops); al = known
+constexpr uint32_t screenService = 0x9ecfb4;    // Pointer
+constexpr uint32_t screenWidth = 0x10;          // int32
+constexpr uint32_t screenHeight = 0x14;         // int32
+constexpr uint32_t playSound = 0x5a0050;        // ecx = 0, edx = sound, push 0.0f (the caller pops)
+constexpr uint32_t cursorMovedSound = 0x61;     // The options pages play it when the cursor moves
 
 // Option item fields
 constexpr uint32_t itemSize = 0x30c;
@@ -153,6 +209,119 @@ void layoutTitleList(void* list) {
     }
 }
 
+void createSlots(uint32_t function, void* page, uint32_t count) {
+    const uintptr_t create = gameAddress(function);
+    __asm {
+        push esi
+        mov esi, page
+        mov eax, count
+        call create
+        pop esi
+    }
+}
+
+void releaseSlots(uint32_t function, void* page) {
+    const uintptr_t release = gameAddress(function);
+    __asm {
+        push esi
+        mov esi, page
+        call release
+        pop esi
+    }
+}
+
+void playPageAnimation(void* page, uint32_t animation) {
+    const uintptr_t play = gameAddress(playAnimation);
+    __asm {
+        push edi
+        mov edi, page
+        mov ecx, animation
+        call play
+        pop edi
+    }
+}
+
+void stopPageAnimation(void* page, uint32_t animation) {
+    const uintptr_t stop = gameAddress(stopAnimation);
+    __asm {
+        push esi
+        push edi
+        mov esi, page
+        mov edi, animation
+        call stop
+        pop edi
+        pop esi
+    }
+}
+
+// advanceAnimation and updateLayout: esi = slot
+void runOnSlot(uint32_t function, void* slot) {
+    const uintptr_t run = gameAddress(function);
+    __asm {
+        push esi
+        mov esi, slot
+        call run
+        pop esi
+    }
+}
+
+void drawLayoutSlot(uint8_t* slot) {
+    reinterpret_cast<void(__thiscall*)(void*, uint32_t)>(gameAddress(drawLayout))(slot, field<uint32_t>(slot, layoutDrawValue));
+}
+
+bool directionPressed(uint32_t query) {
+    void* input = *reinterpret_cast<void**>(gameAddress(inputService));
+    if (!input || !field<void*>(input, inputButtons)) return false;
+    const uintptr_t ask = gameAddress(query);
+    uint8_t pressed;
+    __asm {
+        mov eax, input
+        call ask
+        mov pressed, al
+    }
+    return pressed != 0;
+}
+
+// The pointer's position in the menu coordinates, if the game knows it.
+bool readPointerPosition(int32_t& x, int32_t& y) {
+    auto service = *reinterpret_cast<uint8_t**>(gameAddress(pointerService));
+    if (!service) return false;
+    service[pointerInUse] = 1;
+    const uintptr_t read = gameAddress(readPointer);
+    int32_t pointerX = 0, pointerY = 0;
+    uint8_t known;
+    __asm {
+        push edi
+        lea edi, pointerX
+        lea eax, pointerY
+        push eax
+        xor ecx, ecx
+        call read
+        add esp, 4
+        mov known, al
+        pop edi
+    }
+    x = pointerX;
+    y = pointerY;
+    return known != 0;
+}
+
+bool pointerClicked() {
+    auto service = *reinterpret_cast<uint8_t**>(gameAddress(pointerService));
+    return service && service[pointerPressed] && field<int32_t>(service, pointerPressTime) < clickTimeLimit;
+}
+
+void playMenuSound(uint32_t sound) {
+    const uintptr_t play = gameAddress(playSound);
+    __asm {
+        push 0  ; 0.0f, as every menu passes
+        xor ecx, ecx
+        mov edx, sound
+        call play
+        add esp, 4
+    }
+}
+
 void copyItemText(uint8_t* item, uint32_t offset, const OptionText& text) {
     wcsncpy_s(reinterpret_cast<wchar_t*>(item + offset), itemTextChars, text.text.c_str(), _TRUNCATE);
 }
@@ -225,6 +394,14 @@ PageExtension& extensionOf(void* page) {
     return field<PageExtension>(page, pageBaseSize);
 }
 
+uint8_t** itemsOf(void* page) {
+    return reinterpret_cast<uint8_t**>(&extensionOf(page) + 1);
+}
+
+uint32_t* valuesOf(void* page) {
+    return reinterpret_cast<uint32_t*>(itemsOf(page) + extensionOf(page).itemCount);
+}
+
 const OptionsPageDefinition& definitionOf(void* page) {
     return hostRegistry.pages[extensionOf(page).definition];
 }
@@ -248,18 +425,37 @@ uint8_t* buildItem(const OptionsItemDefinition& definition) {
     return item;
 }
 
+// The constructor gives the item vector 10 places, and appending never grows it.
+// The page's destructor frees the vector with the game's operator delete.
+bool reserveItemPlaces(void* page, uint32_t count) {
+    auto& begin = field<void**>(page, pageItemsBegin);
+    auto& end = field<void**>(page, pageItemsEnd);
+    auto& capacityEnd = field<void**>(page, pageItemsCapacityEnd);
+    if (static_cast<uint32_t>(capacityEnd - begin) >= count) return true;
+    auto places = static_cast<void**>(allocateGameObject(count * sizeof(void*)));
+    if (!places) return false;
+    const auto used = static_cast<uint32_t>(end - begin);
+    if (used) memcpy(places, begin, used * sizeof(void*));
+    if (begin) releaseGameObject(begin);
+    begin = places;
+    end = places + used;
+    capacityEnd = places + count;
+    return true;
+}
+
 // The page owns appended items and frees them with its vector.
 bool buildItems(void* page) {
     PageExtension& extension = extensionOf(page);
     const auto& items = definitionOf(page).items;
-    for (size_t i = 0; i < items.size(); ++i) {
+    if (!reserveItemPlaces(page, extension.itemCount)) return false;
+    for (uint32_t i = 0; i < extension.itemCount; ++i) {
         uint8_t* item = buildItem(items[i]);
         if (!item) return false;
         if (appendItem(page, item) != static_cast<int>(i)) {
             releaseGameObject(item);
             return false;
         }
-        extension.items[i] = item;
+        itemsOf(page)[i] = item;
     }
     extension.built = 1;
     return true;
@@ -275,11 +471,12 @@ void __fastcall refreshItemsMethod(void* page, void*) {
     const PageExtension& extension = extensionOf(page);
     const OptionsPageDefinition& definition = definitionOf(page);
     if (!extension.built) return;
-    const auto count = static_cast<uint32_t>(definition.items.size());
-    uint32_t values[maxOptionsItems] = {};
+    const uint32_t count = extension.itemCount;
+    uint32_t* values = valuesOf(page);
+    memset(values, 0, count * sizeof(uint32_t));
     definition.callbacks.read(definition.callbacks.context, values, count);
     for (uint32_t i = 0; i < count; ++i) {
-        uint8_t* item = extension.items[i];
+        uint8_t* item = itemsOf(page)[i];
         const OptionsItemDefinition& itemDefinition = definition.items[i];
         if (itemDefinition.kind == optionToggle) {
             item[itemToggleState] = values[i] ? 1 : 0;
@@ -293,36 +490,382 @@ void __fastcall refreshItemsMethod(void* page, void*) {
 uint32_t __fastcall itemChangedMethod(void* page, void*, void* item) {
     const PageExtension& extension = extensionOf(page);
     const OptionsPageDefinition& definition = definitionOf(page);
-    for (uint32_t i = 0; i < definition.items.size(); ++i) {
-        if (extension.items[i] != item) continue;
+    uint8_t* const* items = itemsOf(page);
+    for (uint32_t i = 0; i < extension.itemCount; ++i) {
+        if (items[i] != item) continue;
         const bool toggle = definition.items[i].kind == optionToggle;
-        const uint32_t value = toggle ? extension.items[i][itemToggleState] : field<uint32_t>(item, itemChoiceIndex);
+        const uint32_t value = toggle ? items[i][itemToggleState] : field<uint32_t>(item, itemChoiceIndex);
         definition.callbacks.changed(definition.callbacks.context, i, value);
         return 1;
     }
     return 0;
 }
 
+// ---------------------------------------------------------------- scrolling pages
+//
+// A page with more items than optionsItemsPerScreen shows that many rows and
+// scrolls, like the game's control mapping page (0x64a7b0): the rows follow the
+// cursor, arrows above and below show that more items are there, and a click on
+// an arrow turns a screen of rows. The game's own page methods do the rest; they
+// draw and hit-test items by their index in the vector, so while they run the
+// page shows them only the items of its rows.
+
+// The layouts and animations a page loads (InfoArea +8). The game's descriptors
+// hold absolute pointers, relocated with the exe.
+struct LayoutFile {
+    char name[0x40];
+};
+struct LayoutAnimation {
+    uint8_t flags[4];
+    uint32_t unknown;  // 1 in every options page
+    char name[0x20];
+    char file[0x40];
+    int32_t layout;  // The layout it plays on
+};
+static_assert(sizeof(LayoutAnimation) == 0x6c, "the game's animation entries are 0x6c bytes");
+struct LayoutDescriptor {
+    uint32_t drawValues[2];  // The constructor writes the same values to the page's +0x24 and +0x28
+    const LayoutFile* layouts;
+    uint32_t layoutCount;
+    const LayoutAnimation* animations;
+    uint32_t animationCount;
+};
+
+constexpr uint32_t optionsPageLayouts = 0x96a788;     // Base options page: frame, rows
+constexpr uint32_t controlMappingLayouts = 0x969f70;  // Control mapping page: frame, paper, two arrows
+constexpr uint32_t optionsPageLayoutCount = 2;        // The base update and draw run these only
+constexpr uint32_t optionsPageAnimationCount = 4;
+constexpr uint32_t controlMappingLayoutCount = 4;
+constexpr uint32_t controlMappingAnimationCount = 6;
+constexpr uint32_t controlMappingFirstArrowAnimation = 2;
+
+// The scrolling page: the base page's layouts and animations, then the control
+// mapping page's arrows with their animations (the same layout numbers).
+constexpr uint32_t upArrowLayout = 2;
+constexpr uint32_t downArrowLayout = 3;
+constexpr uint32_t scrollingLayoutCount = 4;
+constexpr uint32_t upArrowShown = 4;  // sign_white
+constexpr uint32_t upArrowMoved = 5;  // sign_up
+constexpr uint32_t downArrowShown = 6;
+constexpr uint32_t downArrowMoved = 7;
+constexpr uint32_t scrollingAnimationCount = 8;
+
+LayoutFile scrollingLayoutFiles[scrollingLayoutCount];
+LayoutAnimation scrollingAnimations[scrollingAnimationCount];
+LayoutDescriptor scrollingLayouts;
+
+// Menu coordinates (those of the pointer and of the layouts). The rows of the
+// base page take y 194 to 519 (8 rows from 0xc2, 0x29 apart); the arrows go just
+// above and below them, clear of the page's button at x 800 to 1170, y 550 to 600.
+struct MenuPoint {
+    float x, y;
+};
+constexpr MenuPoint upArrowCentre{755, 164};
+constexpr MenuPoint downArrowCentre{755, 548};
+constexpr float downArrowRotation = 180;  // u_sign points up
+constexpr int32_t arrowClickHalfWidth = 20;  // The control mapping page's click areas are 40 by 50
+constexpr int32_t arrowClickHalfHeight = 25;
+
+const LayoutDescriptor& gameLayouts(uint32_t descriptor) {
+    return *reinterpret_cast<const LayoutDescriptor*>(gameAddress(descriptor));
+}
+
+bool isArrowAnimation(const LayoutAnimation& animation, const char* name, int32_t layout) {
+    return !strcmp(animation.name, name) && animation.layout == layout;
+}
+
+// The descriptors the scrolling page is made of are as expected.
+bool scrollingLayoutsMatch() {
+    const LayoutDescriptor& base = gameLayouts(optionsPageLayouts);
+    const LayoutDescriptor& mapping = gameLayouts(controlMappingLayouts);
+    if (base.layoutCount != optionsPageLayoutCount || base.animationCount != optionsPageAnimationCount ||
+        mapping.layoutCount != controlMappingLayoutCount || mapping.animationCount != controlMappingAnimationCount)
+        return false;
+    const LayoutAnimation* arrows = mapping.animations + controlMappingFirstArrowAnimation;
+    return !strcmp(mapping.layouts[upArrowLayout].name, "u_sign.layout") &&
+        !strcmp(mapping.layouts[downArrowLayout].name, "u_sign.layout") &&
+        isArrowAnimation(arrows[0], "sign_white", upArrowLayout) && isArrowAnimation(arrows[1], "sign_up", upArrowLayout) &&
+        isArrowAnimation(arrows[2], "sign_white", downArrowLayout) && isArrowAnimation(arrows[3], "sign_up", downArrowLayout);
+}
+
+void prepareScrollingLayouts() {
+    const LayoutDescriptor& base = gameLayouts(optionsPageLayouts);
+    const LayoutDescriptor& mapping = gameLayouts(controlMappingLayouts);
+    memcpy(scrollingLayoutFiles, base.layouts, optionsPageLayoutCount * sizeof(LayoutFile));
+    memcpy(scrollingLayoutFiles + upArrowLayout, mapping.layouts + upArrowLayout, 2 * sizeof(LayoutFile));
+    memcpy(scrollingAnimations, base.animations, optionsPageAnimationCount * sizeof(LayoutAnimation));
+    memcpy(scrollingAnimations + upArrowShown, mapping.animations + controlMappingFirstArrowAnimation,
+        4 * sizeof(LayoutAnimation));
+    scrollingLayouts = {{base.drawValues[0], base.drawValues[1]}, scrollingLayoutFiles, scrollingLayoutCount,
+        scrollingAnimations, scrollingAnimationCount};
+}
+
+uint8_t* layoutSlot(void* page, uint32_t layout) {
+    return field<uint8_t**>(page, pageLayoutSlots)[layout];
+}
+
+void placeArrow(uint8_t* slot, MenuPoint centre, float rotation) {
+    auto screen = *reinterpret_cast<uint8_t**>(gameAddress(screenService));
+    const float halfWidth = screen ? field<int32_t>(screen, screenWidth) * 0.5f : 0;
+    const float halfHeight = screen ? field<int32_t>(screen, screenHeight) * 0.5f : 0;
+    field<float>(slot, layoutX) = centre.x - halfWidth;
+    field<float>(slot, layoutY) = centre.y - halfHeight;
+    field<float>(slot, layoutRotation) = rotation;
+}
+
+bool slotsMade(void* page, uint32_t array, uint32_t count) {
+    auto slots = field<void**>(page, array);
+    if (!slots) return false;
+    for (uint32_t i = 0; i < count; ++i) {
+        if (!slots[i]) return false;
+    }
+    return true;
+}
+
+// The base constructor made slots for its own descriptor, 2 layout slots fixed
+// in its code; the page's initialize loads as many as the descriptor names.
+bool useScrollingLayouts(void* page) {
+    releaseSlots(releaseLayoutSlots, page);
+    releaseSlots(releaseAnimationSlots, page);
+    field<const LayoutDescriptor*>(page, pageLayoutDescriptor) = &scrollingLayouts;
+    createSlots(createLayoutSlots, page, scrollingLayoutCount);
+    createSlots(createAnimationSlots, page, scrollingAnimationCount);
+    if (!slotsMade(page, pageLayoutSlots, scrollingLayoutCount) ||
+        !slotsMade(page, pageAnimationSlots, scrollingAnimationCount))
+        return false;
+    placeArrow(layoutSlot(page, upArrowLayout), upArrowCentre, 0);
+    placeArrow(layoutSlot(page, downArrowLayout), downArrowCentre, downArrowRotation);
+    return true;
+}
+
+int32_t& cursorOf(void* page) {
+    return field<int32_t>(page, pageCursor);
+}
+
+uint32_t lastFirstVisibleItem(const PageExtension& extension) {
+    return extension.itemCount - optionsItemsPerScreen;
+}
+
+bool hasItemsAbove(const PageExtension& extension) {
+    return extension.firstVisibleItem > 0;
+}
+
+bool hasItemsBelow(const PageExtension& extension) {
+    return extension.firstVisibleItem < lastFirstVisibleItem(extension);
+}
+
+void keepCursorVisible(void* page) {
+    PageExtension& extension = extensionOf(page);
+    const int32_t cursor = cursorOf(page);
+    uint32_t& first = extension.firstVisibleItem;
+    if (cursor >= 0 && static_cast<uint32_t>(cursor) < extension.itemCount) {
+        const auto item = static_cast<uint32_t>(cursor);
+        if (item < first) first = item;
+        else if (item >= first + optionsItemsPerScreen) first = item - optionsItemsPerScreen + 1;
+    }
+    if (first > lastFirstVisibleItem(extension)) first = lastFirstVisibleItem(extension);
+}
+
+void playScrollAnimation(void* page, uint32_t firstBefore) {
+    const uint32_t first = extensionOf(page).firstVisibleItem;
+    if (first != firstBefore) playPageAnimation(page, first < firstBefore ? upArrowMoved : downArrowMoved);
+}
+
+// The game's input moves the cursor one row within the rows it is shown, and
+// from the last row to no item. Moving the rows first turns that step into a step
+// to the next item. It also wraps between no item and the first or last one.
+void moveRowsForDirectionKeys(void* page) {
+    const bool up = directionPressed(upPressed);
+    const bool down = directionPressed(downPressed);
+    if (up == down) return;
+    PageExtension& extension = extensionOf(page);
+    const int32_t cursor = cursorOf(page);
+    uint32_t& first = extension.firstVisibleItem;
+    const uint32_t firstBefore = first;
+    const auto firstRow = static_cast<int32_t>(first);
+    const int32_t lastRow = firstRow + static_cast<int32_t>(optionsItemsPerScreen) - 1;
+    if (up && cursor == noCursor) first = lastFirstVisibleItem(extension);
+    else if (up && cursor == firstRow && hasItemsAbove(extension)) --first;
+    else if (down && cursor == noCursor) first = 0;
+    else if (down && cursor == lastRow && hasItemsBelow(extension)) ++first;
+    playScrollAnimation(page, firstBefore);
+}
+
+bool pointerOnArrow(int32_t x, int32_t y, MenuPoint centre) {
+    const auto centreX = static_cast<int32_t>(centre.x);
+    const auto centreY = static_cast<int32_t>(centre.y);
+    return x >= centreX - arrowClickHalfWidth && x <= centreX + arrowClickHalfWidth &&
+        y >= centreY - arrowClickHalfHeight && y <= centreY + arrowClickHalfHeight;
+}
+
+// Moves the rows and the cursor by rows (negative is up), within the items.
+void turnRows(void* page, int32_t rows) {
+    PageExtension& extension = extensionOf(page);
+    const uint32_t firstBefore = extension.firstVisibleItem;
+    const auto lastFirst = static_cast<int32_t>(lastFirstVisibleItem(extension));
+    const int32_t first = static_cast<int32_t>(firstBefore) + rows;
+    extension.firstVisibleItem = static_cast<uint32_t>(first < 0 ? 0 : first > lastFirst ? lastFirst : first);
+    int32_t& cursor = cursorOf(page);
+    if (cursor != noCursor) {
+        const int32_t lastItem = static_cast<int32_t>(extension.itemCount) - 1;
+        const int32_t moved = cursor + rows;
+        cursor = moved < 0 ? 0 : moved > lastItem ? lastItem : moved;
+    }
+    playScrollAnimation(page, firstBefore);
+    playMenuSound(cursorMovedSound);
+}
+
+void turnRowsForArrowClick(void* page) {
+    if (!pointerClicked()) return;
+    int32_t x, y;
+    if (!readPointerPosition(x, y)) return;
+    const PageExtension& extension = extensionOf(page);
+    const auto screenRows = static_cast<int32_t>(optionsItemsPerScreen);
+    if (hasItemsAbove(extension) && pointerOnArrow(x, y, upArrowCentre)) turnRows(page, -screenRows);
+    else if (hasItemsBelow(extension) && pointerOnArrow(x, y, downArrowCentre)) turnRows(page, screenRows);
+}
+
+// While it lives, the page's item vector and cursor cover only the items of its
+// rows. Expects the cursor in the rows or at no item.
+class VisibleRows {
+public:
+    explicit VisibleRows(void* page)
+        : page_(page), begin_(field<void**>(page, pageItemsBegin)), end_(field<void**>(page, pageItemsEnd)),
+          first_(extensionOf(page).firstVisibleItem) {
+        field<void**>(page_, pageItemsBegin) = begin_ + first_;
+        field<void**>(page_, pageItemsEnd) = begin_ + first_ + optionsItemsPerScreen;
+        int32_t& cursor = cursorOf(page_);
+        if (cursor != noCursor) cursor -= static_cast<int32_t>(first_);
+    }
+    ~VisibleRows() {
+        field<void**>(page_, pageItemsBegin) = begin_;
+        field<void**>(page_, pageItemsEnd) = end_;
+        int32_t& cursor = cursorOf(page_);
+        if (cursor != noCursor) cursor += static_cast<int32_t>(first_);
+    }
+    VisibleRows(const VisibleRows&) = delete;
+    VisibleRows& operator=(const VisibleRows&) = delete;
+
+private:
+    void* page_;
+    void** begin_;
+    void** end_;
+    uint32_t first_;
+};
+
+// Like the control mapping page's update: each arrow shows while items are on its side.
+void showArrows(void* page) {
+    const PageExtension& extension = extensionOf(page);
+    stopPageAnimation(page, upArrowShown);
+    if (hasItemsAbove(extension)) playPageAnimation(page, upArrowShown);
+    stopPageAnimation(page, downArrowShown);
+    if (hasItemsBelow(extension)) playPageAnimation(page, downArrowShown);
+}
+
+// The base update runs only the base page's animations and layouts.
+void advanceArrows(void* page) {
+    auto animations = field<void**>(page, pageAnimationSlots);
+    for (uint32_t i = optionsPageAnimationCount; i < scrollingAnimationCount; ++i) runOnSlot(advanceAnimation, animations[i]);
+    runOnSlot(updateLayout, layoutSlot(page, upArrowLayout));
+    runOnSlot(updateLayout, layoutSlot(page, downArrowLayout));
+}
+
+void drawArrows(void* page) {
+    for (uint32_t layout : {upArrowLayout, downArrowLayout}) {
+        uint8_t* slot = layoutSlot(page, layout);
+        if (slot[layoutShown]) drawLayoutSlot(slot);
+    }
+}
+
+using PageUpdate = uint32_t(__thiscall*)(void* page);
+using PageDraw = uint32_t(__thiscall*)(void* page, uint32_t target);
+using PageInput = uint8_t(__thiscall*)(void* page, uint32_t buttons, uint32_t state);
+uintptr_t scrollingPageMethods[optionsPageMethodCount];
+PageUpdate baseUpdate;
+PageDraw baseDraw;
+PageInput baseInput;
+
+// Until every item is built and the layouts are loaded, a scrolling page acts as the base page.
+bool readyToScroll(void* page) {
+    return extensionOf(page).built && field<uint8_t>(page, pageLayoutsLoaded);
+}
+
+uint32_t __fastcall scrollingUpdateMethod(void* page, void*) {
+    if (!readyToScroll(page)) return baseUpdate(page);
+    showArrows(page);
+    const uint32_t result = baseUpdate(page);
+    advanceArrows(page);
+    return result;
+}
+
+uint32_t __fastcall scrollingDrawMethod(void* page, void*, uint32_t target) {
+    if (!readyToScroll(page)) return baseDraw(page, target);
+    keepCursorVisible(page);
+    uint32_t result;
+    {
+        VisibleRows rows(page);
+        result = baseDraw(page, target);
+    }
+    drawArrows(page);
+    return result;
+}
+
+uint8_t __fastcall scrollingInputMethod(void* page, void*, uint32_t buttons, uint32_t state) {
+    if (!readyToScroll(page)) return baseInput(page, buttons, state);
+    keepCursorVisible(page);
+    turnRowsForArrowClick(page);
+    moveRowsForDirectionKeys(page);
+    uint8_t handled;
+    {
+        VisibleRows rows(page);
+        handled = baseInput(page, buttons, state);
+    }
+    keepCursorVisible(page);
+    return handled;
+}
+
+// ---------------------------------------------------------------- page objects
+
+void replaceMethod(uintptr_t* methods, uint32_t slot, void* method) {
+    methods[slot / sizeof(uintptr_t)] = reinterpret_cast<uintptr_t>(method);
+}
+
 void prepareModPageMethods() {
     memcpy(modPageMethods, reinterpret_cast<void*>(gameAddress(optionsPageMethods)), sizeof(modPageMethods));
-    auto replace = [](uint32_t slot, void* method) {
-        modPageMethods[slot / sizeof(uintptr_t)] = reinterpret_cast<uintptr_t>(method);
-    };
-    replace(buildItemsSlot, buildItemsMethod);
-    replace(pageSpecificSlotA, noPageWork);
-    replace(refreshItemsSlot, refreshItemsMethod);
-    replace(pageSpecificSlotB, noPageWork);
-    replace(itemChangedSlot, itemChangedMethod);
+    baseUpdate = reinterpret_cast<PageUpdate>(modPageMethods[updateSlot / sizeof(uintptr_t)]);
+    baseDraw = reinterpret_cast<PageDraw>(modPageMethods[drawSlot / sizeof(uintptr_t)]);
+    baseInput = reinterpret_cast<PageInput>(modPageMethods[inputSlot / sizeof(uintptr_t)]);
+    replaceMethod(modPageMethods, buildItemsSlot, buildItemsMethod);
+    replaceMethod(modPageMethods, pageSpecificSlotA, noPageWork);
+    replaceMethod(modPageMethods, refreshItemsSlot, refreshItemsMethod);
+    replaceMethod(modPageMethods, pageSpecificSlotB, noPageWork);
+    replaceMethod(modPageMethods, itemChangedSlot, itemChangedMethod);
+
+    memcpy(scrollingPageMethods, modPageMethods, sizeof(scrollingPageMethods));
+    replaceMethod(scrollingPageMethods, updateSlot, scrollingUpdateMethod);
+    replaceMethod(scrollingPageMethods, drawSlot, scrollingDrawMethod);
+    replaceMethod(scrollingPageMethods, inputSlot, scrollingInputMethod);
+    prepareScrollingLayouts();
 }
 
 void* createModPage(uint32_t definition) {
-    void* page = allocateGameObject(pageSize);
+    const auto itemCount = static_cast<uint32_t>(hostRegistry.pages[definition].items.size());
+    const size_t size = pageSize(itemCount);
+    void* page = allocateGameObject(size);
     if (!page) return nullptr;
-    memset(page, 0, pageSize);
+    memset(page, 0, size);
     reinterpret_cast<void*(__stdcall*)(void*)>(gameAddress(optionsPageConstructor))(page);
-    field<uintptr_t*>(page, 0) = modPageMethods;
-    extensionOf(page).definition = definition;
-    return page;
+    PageExtension& extension = extensionOf(page);
+    extension.definition = definition;
+    extension.itemCount = itemCount;
+    if (itemCount <= optionsItemsPerScreen) {
+        field<uintptr_t*>(page, 0) = modPageMethods;
+        return page;
+    }
+    field<uintptr_t*>(page, 0) = scrollingPageMethods;
+    if (useScrollingLayouts(page)) return page;
+    destroyGameObject(page);
+    return nullptr;
 }
 
 // Logs a problem the first time it happens; the menus are built again and again.
@@ -849,7 +1392,7 @@ void prepareGameHooks(HMODULE game, HMODULE owner) {
         return;
     }
     hostRegistry.supported.options =
-        sitesMatch(optionsMenuSites) && languageCodeMatches() && claimSites(optionsMenuSites);
+        sitesMatch(optionsMenuSites) && languageCodeMatches() && scrollingLayoutsMatch() && claimSites(optionsMenuSites);
     hostRegistry.supported.frame = sitesMatch(frameSites) && claimSites(frameSites);
     hostRegistry.supported.optionsSaved = sitesMatch(optionsSavedSites) && claimSites(optionsSavedSites);
     if (!hostRegistry.supported.options) registryLog(nullptr, "the options menu code is not as expected; options pages are unavailable");

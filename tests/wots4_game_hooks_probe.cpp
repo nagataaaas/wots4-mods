@@ -23,8 +23,8 @@ void check(const char* name, bool ok) {
 
 // ---------------------------------------------------------------- fake game memory
 
-// Covers every address the hooks use, from 0x500000 to 0x9f0000.
-constexpr uint32_t fakeStart = 0x500000;
+// Covers every address the hooks use, from 0x4f0000 to 0x9f0000.
+constexpr uint32_t fakeStart = 0x4f0000;
 constexpr uint32_t fakeEnd = 0x9f0000;
 uint8_t* fakeImage;
 
@@ -80,6 +80,209 @@ void __cdecl fakeDeleteArray(void* array) {
 constexpr uint32_t itemVector = 0x4c;
 constexpr uint32_t itemCapacity = 10;
 
+// ---- layout and animation slots, and the game's layout descriptors
+
+constexpr uint32_t slotCountsOffset = 0x1e;  // u16 layout slots, then u16 animation slots at +0x20
+constexpr uint32_t layoutSlotSize = 0x40;
+constexpr uint32_t animationSlotSize = 0x30;
+unsigned slotSetsMade, slotSetsReleased;
+
+void __cdecl fakeMakeSlots(void* page, uint32_t array, uint32_t countOffset, uint32_t count, uint32_t slotSize) {
+    ++slotSetsMade;
+    auto slots = static_cast<uint8_t**>(malloc(count * sizeof(uint8_t*)));
+    for (uint32_t i = 0; i < count; ++i) slots[i] = static_cast<uint8_t*>(calloc(1, slotSize));
+    field<uint8_t**>(page, array) = slots;
+    field<uint16_t>(page, countOffset) = static_cast<uint16_t>(count);
+}
+
+void __cdecl fakeFreeSlots(void* page, uint32_t array, uint32_t countOffset) {
+    auto& slots = field<uint8_t**>(page, array);
+    if (!slots) return;
+    ++slotSetsReleased;
+    for (uint32_t i = 0; i < field<uint16_t>(page, countOffset); ++i) free(slots[i]);
+    free(slots);
+    slots = nullptr;
+    field<uint16_t>(page, countOffset) = 0;
+}
+
+void __cdecl fakeMakeLayoutSlots(void* page, uint32_t count) {
+    fakeMakeSlots(page, pageLayoutSlots, slotCountsOffset, count, layoutSlotSize);
+}
+void __cdecl fakeMakeAnimationSlots(void* page, uint32_t count) {
+    fakeMakeSlots(page, pageAnimationSlots, slotCountsOffset + 2, count, animationSlotSize);
+}
+void __cdecl fakeFreeLayoutSlots(void* page) {
+    fakeFreeSlots(page, pageLayoutSlots, slotCountsOffset);
+}
+void __cdecl fakeFreeAnimationSlots(void* page) {
+    fakeFreeSlots(page, pageAnimationSlots, slotCountsOffset + 2);
+}
+
+__declspec(naked) void fakeCreateLayoutSlots() {  // eax = count, esi = page
+    __asm {
+        push eax
+        push esi
+        call fakeMakeLayoutSlots
+        add esp, 8
+        ret
+    }
+}
+__declspec(naked) void fakeCreateAnimationSlots() {  // eax = count, esi = page
+    __asm {
+        push eax
+        push esi
+        call fakeMakeAnimationSlots
+        add esp, 8
+        ret
+    }
+}
+__declspec(naked) void fakeReleaseLayoutSlots() {  // esi = page
+    __asm {
+        push esi
+        call fakeFreeLayoutSlots
+        add esp, 4
+        ret
+    }
+}
+__declspec(naked) void fakeReleaseAnimationSlots() {  // esi = page
+    __asm {
+        push esi
+        call fakeFreeAnimationSlots
+        add esp, 4
+        ret
+    }
+}
+
+// Where the fake descriptors keep their entries; the descriptors are at the game's addresses.
+constexpr uint32_t fakeBaseLayoutFiles = 0x96a558, fakeBaseAnimations = 0x96a5d8;
+constexpr uint32_t fakeMappingLayoutFiles = 0x969be8, fakeMappingAnimations = 0x969ce8;
+
+LayoutAnimation animationEntry(const char* name, int32_t layout) {
+    LayoutAnimation animation{{1}, 1, {}, {}, layout};
+    strcpy_s(animation.name, name);
+    strcpy_s(animation.file, "fake.lyanim");
+    return animation;
+}
+
+void writeLayoutDescriptor(uint32_t descriptor, uint32_t files, std::initializer_list<const char*> layouts,
+    uint32_t animations, std::initializer_list<LayoutAnimation> entries) {
+    auto file = reinterpret_cast<LayoutFile*>(fake(files));
+    for (const char* layout : layouts) strcpy_s((file++)->name, layout);
+    memcpy(fake(animations), entries.begin(), entries.size() * sizeof(LayoutAnimation));
+    const LayoutDescriptor written{{0x10, 9}, reinterpret_cast<const LayoutFile*>(fake(files)),
+        static_cast<uint32_t>(layouts.size()), reinterpret_cast<const LayoutAnimation*>(fake(animations)),
+        static_cast<uint32_t>(entries.size())};
+    memcpy(fake(descriptor), &written, sizeof(written));
+}
+
+void writeLayoutDescriptors() {
+    writeLayoutDescriptor(optionsPageLayouts, fakeBaseLayoutFiles, {"u_st_op_kamera.layout", "u_st_op_mpl.layout"},
+        fakeBaseAnimations, {animationEntry("st_fade_in", 0), animationEntry("st_fade_out", 0),
+        animationEntry("pl_00", 1), animationEntry("pl_01", 1)});
+    writeLayoutDescriptor(controlMappingLayouts, fakeMappingLayoutFiles,
+        {"u_st_op_kamera.layout", "u_ps_yousi01.layout", "u_sign.layout", "u_sign.layout"}, fakeMappingAnimations,
+        {animationEntry("st_fade_in", 0), animationEntry("st_fade_out", 0), animationEntry("sign_white", 2),
+        animationEntry("sign_up", 2), animationEntry("sign_white", 3), animationEntry("sign_up", 3)});
+}
+
+// ---- animations, arrows, pointer, keys and sounds
+
+std::vector<uint32_t> animationsPlayed;
+unsigned animationsAdvanced, layoutsUpdated, layoutsDrawn, soundsPlayed;
+
+// Like the game: nothing before the layouts are loaded; playing shows the animation's layout.
+void __cdecl fakeShowAnimationLayout(void* page, uint32_t animation, bool play) {
+    if (!field<uint8_t>(page, pageLayoutsLoaded)) return;
+    if (play) animationsPlayed.push_back(animation);
+    const auto descriptor = field<const LayoutDescriptor*>(page, pageLayoutDescriptor);
+    layoutSlot(page, descriptor->animations[animation].layout)[layoutShown] = play ? 1 : 0;
+}
+
+__declspec(naked) void fakePlayAnimation() {  // ecx = animation, edi = page
+    __asm {
+        push 1
+        push ecx
+        push edi
+        call fakeShowAnimationLayout
+        add esp, 12
+        ret
+    }
+}
+__declspec(naked) void fakeStopAnimation() {  // edi = animation, esi = page
+    __asm {
+        push 0
+        push edi
+        push esi
+        call fakeShowAnimationLayout
+        add esp, 12
+        ret
+    }
+}
+__declspec(naked) void fakeAdvanceAnimation() {  // esi = animation slot
+    __asm {
+        inc animationsAdvanced
+        ret
+    }
+}
+__declspec(naked) void fakeUpdateLayout() {  // esi = layout slot
+    __asm {
+        inc layoutsUpdated
+        ret
+    }
+}
+void __fastcall fakeDrawLayout(void*, void*, uint32_t) {
+    ++layoutsDrawn;
+}
+
+bool upKey, downKey;
+int32_t pointerX, pointerY;
+uint8_t inputObject[0xd0];
+uint8_t pointerObject[0x1c20];
+uint8_t screenObject[0x18];
+
+__declspec(naked) void fakeUpPressed() {  // eax = input service
+    __asm {
+        movzx eax, upKey
+        ret
+    }
+}
+__declspec(naked) void fakeDownPressed() {
+    __asm {
+        movzx eax, downKey
+        ret
+    }
+}
+void __cdecl fakeStorePointer(int32_t* x, int32_t* y) {
+    *x = pointerX;
+    *y = pointerY;
+}
+__declspec(naked) void fakeReadPointer() {  // ecx = 0, edi = &x, [esp+4] = &y; al = known
+    __asm {
+        push dword ptr [esp + 4]
+        push edi
+        call fakeStorePointer
+        add esp, 8
+        mov al, 1
+        ret
+    }
+}
+void __cdecl fakePlaySound(float) {  // ecx = 0, edx = sound
+    ++soundsPlayed;
+}
+
+void clickAt(MenuPoint point) {
+    pointerX = static_cast<int32_t>(point.x);
+    pointerY = static_cast<int32_t>(point.y);
+    pointerObject[pointerPressed] = 1;
+    field<int32_t>(pointerObject, pointerPressTime) = 0;
+}
+
+void releasePointer() {
+    pointerObject[pointerPressed] = 0;
+}
+
+// ---- the base page
+
 uintptr_t fakePageMethods[optionsPageMethodCount];
 
 void* __stdcall fakePageConstructor(void* page) {
@@ -88,6 +291,11 @@ void* __stdcall fakePageConstructor(void* page) {
     field<void**>(page, itemVector) = items;
     field<void**>(page, itemVector + 4) = items;
     field<void**>(page, itemVector + 8) = items + itemCapacity;
+    field<int32_t>(page, pageCursor) = noCursor;
+    // Like the game's constructor: its own descriptor, 2 layout slots, an animation slot per animation.
+    field<const void*>(page, pageLayoutDescriptor) = fake(optionsPageLayouts);
+    fakeMakeLayoutSlots(page, 2);
+    fakeMakeAnimationSlots(page, 4);
     return page;
 }
 
@@ -96,16 +304,52 @@ void __fastcall fakePageDestroy(void* page, void*, uint32_t flags) {
     auto begin = field<void**>(page, itemVector), end = field<void**>(page, itemVector + 4);
     for (void** item = begin; item != end; ++item) fakeDelete(*item);
     free(begin);
+    fakeFreeLayoutSlots(page);
+    fakeFreeAnimationSlots(page);
     if (flags & 1) fakeDelete(page);
 }
 
-// Like the game: initialize builds the items, then shows the current values.
+// Like the game: initialize builds the items, then shows the current values, then loads the layouts.
 void __fastcall fakePageInitialize(void* page, void*) {
     reinterpret_cast<void(__thiscall*)(void*)>(virtualMethod(page, buildItemsSlot))(page);
     reinterpret_cast<void(__thiscall*)(void*)>(virtualMethod(page, refreshItemsSlot))(page);
+    field<uint8_t>(page, pageLayoutsLoaded) = 1;
 }
 
-void __fastcall fakePageUpdate(void*, void*) {}
+unsigned baseUpdates;
+uint32_t __fastcall fakePageUpdate(void*, void*) {
+    ++baseUpdates;
+    return 1;
+}
+
+// What the base draw and input were shown.
+struct ShownRows {
+    void** begin;
+    uint32_t count;
+    int32_t cursor;
+};
+ShownRows lastDraw, lastInput;
+
+ShownRows shownRows(void* page) {
+    auto begin = field<void**>(page, itemVector);
+    return {begin, static_cast<uint32_t>(field<void**>(page, itemVector + 4) - begin), field<int32_t>(page, pageCursor)};
+}
+
+uint32_t __fastcall fakePageDraw(void* page, void*, uint32_t) {
+    lastDraw = shownRows(page);
+    return 1;
+}
+
+// Moves the cursor like the game's input (0x645f90): up from the first item gives no
+// item, up from no item the last; down from the last item gives no item.
+uint8_t __fastcall fakePageInput(void* page, void*, uint32_t, uint32_t) {
+    lastInput = shownRows(page);
+    int32_t& cursor = field<int32_t>(page, pageCursor);
+    const auto count = static_cast<int32_t>(lastInput.count);
+    if (upKey && --cursor < noCursor) cursor = count - 1;
+    if (downKey && ++cursor >= count) cursor = noCursor;
+    return 1;
+}
 
 void __fastcall fakeUnexpectedMethod(void*, void*) {
     ++unexpectedMethodCalls;
@@ -177,11 +421,33 @@ void writeFakeGame() {
     writeJump(titleListAdd, fakeListAdd);
     writeJump(titleListLayout, fakeListLayout);
     writeJump(titleListMouse, fakeListMouse);
+    writeJump(createLayoutSlots, fakeCreateLayoutSlots);
+    writeJump(releaseLayoutSlots, fakeReleaseLayoutSlots);
+    writeJump(createAnimationSlots, fakeCreateAnimationSlots);
+    writeJump(releaseAnimationSlots, fakeReleaseAnimationSlots);
+    writeJump(playAnimation, fakePlayAnimation);
+    writeJump(stopAnimation, fakeStopAnimation);
+    writeJump(advanceAnimation, fakeAdvanceAnimation);
+    writeJump(updateLayout, fakeUpdateLayout);
+    writeJump(drawLayout, fakeDrawLayout);
+    writeJump(upPressed, fakeUpPressed);
+    writeJump(downPressed, fakeDownPressed);
+    writeJump(readPointer, fakeReadPointer);
+    writeJump(playSound, fakePlaySound);
+    field<void*>(inputObject, inputButtons) = inputObject;
+    writeSlot(inputService, inputObject);
+    writeSlot(pointerService, pointerObject);
+    field<int32_t>(screenObject, screenWidth) = 1280;
+    field<int32_t>(screenObject, screenHeight) = 720;
+    writeSlot(screenService, screenObject);
+    writeLayoutDescriptors();
 
     for (uintptr_t& method : fakePageMethods) method = reinterpret_cast<uintptr_t>(fakeUnexpectedMethod);
     fakePageMethods[0] = reinterpret_cast<uintptr_t>(fakePageDestroy);
     fakePageMethods[1] = reinterpret_cast<uintptr_t>(fakePageInitialize);
-    fakePageMethods[2] = reinterpret_cast<uintptr_t>(fakePageUpdate);
+    fakePageMethods[updateSlot / 4] = reinterpret_cast<uintptr_t>(fakePageUpdate);
+    fakePageMethods[drawSlot / 4] = reinterpret_cast<uintptr_t>(fakePageDraw);
+    fakePageMethods[inputSlot / 4] = reinterpret_cast<uintptr_t>(fakePageInput);
     memcpy(fake(optionsPageMethods), fakePageMethods, sizeof(fakePageMethods));
 }
 
@@ -263,7 +529,7 @@ uint32_t address(const void* pointer) {
 // ---------------------------------------------------------------- Mod side
 
 struct ModState {
-    uint32_t values[maxOptionsItems];
+    uint32_t values[16];
     unsigned reads, changes;
     uint32_t lastItem, lastValue;
 };
@@ -335,8 +601,8 @@ void checkModPage(void* page, const char* name, bool expectA) {
     const PageExtension& extension = extensionOf(page);
     sprintf_s(label, "%s: page uses the Mod page methods and is built", name);
     check(label, field<uintptr_t*>(page, 0) == modPageMethods && extension.built == 1);
-    uint8_t* toggle = extension.items[0];
-    uint8_t* choice = extension.items[1];
+    uint8_t* toggle = itemsOf(page)[0];
+    uint8_t* choice = itemsOf(page)[1];
     sprintf_s(label, "%s: toggle texts and state from read", name);
     check(label, wcscmp(itemText(toggle, itemLabel), expectA ? L"Connect" : L"Show") == 0 &&
         wcscmp(itemText(toggle, itemOnText), L"Yes") == 0 && wcscmp(itemText(toggle, itemOffText), L"No") == 0 &&
@@ -404,11 +670,11 @@ void checkTitleScreen() {
     check("draw: index 5 is page A, eax kept", r.ecx == address(pageA) && r.eax == 0xabcd);
 
     const auto changed = reinterpret_cast<uint32_t(__thiscall*)(void*, void*)>(virtualMethod(pageA, itemChangedSlot));
-    uint8_t* choiceA = extensionOf(pageA).items[1];
+    uint8_t* choiceA = itemsOf(pageA)[1];
     field<uint32_t>(choiceA, itemChoiceIndex) = 3;
     check("changed: choice reports its index", changed(pageA, choiceA) == 1 && modA.changes == 1 &&
         modA.lastItem == 1 && modA.lastValue == 3);
-    uint8_t* toggleA = extensionOf(pageA).items[0];
+    uint8_t* toggleA = itemsOf(pageA)[0];
     toggleA[itemToggleState] = 0;
     check("changed: toggle reports 0 or 1", changed(pageA, toggleA) == 1 && modA.lastItem == 0 && modA.lastValue == 0);
     uint8_t stranger[itemSize] = {};
@@ -494,6 +760,165 @@ void checkGameEvents() {
     check("options saved: callback after the save", optionsSaved == 1);
 }
 
+// ---------------------------------------------------------------- scrolling page
+
+constexpr uint32_t scrollingItemCount = 12;  // 8 rows, 4 more below
+ModState modC{{1, 0, 1}};
+
+// A page added after the others, as a Mod would register it.
+uint32_t addScrollingPageDefinition() {
+    const LocalizedText onOff[] = {{L"はい", L"Yes"}, {L"いいえ", L"No"}};
+    const std::vector<OptionItem> items(scrollingItemCount, OptionItem{optionToggle, {L"項目", L"Item"}, onOff, 2});
+    const OptionsPageCallbacks callbacks{&modC, readValues, valueChanged};
+    const LocalizedText title{L"ページC", L"Page C"};
+    hostRegistry.registrationOpen = true;
+    addOptionsPage(reinterpret_cast<HMODULE>(0x10000), &title, items.data(), scrollingItemCount, &callbacks);
+    hostRegistry.registrationOpen = false;
+    hostRegistry.textsResolved = false;
+    resolveTexts();
+    return static_cast<uint32_t>(hostRegistry.pages.size() - 1);
+}
+
+void updatePage(void* page) {
+    reinterpret_cast<uint32_t(__thiscall*)(void*)>(virtualMethod(page, updateSlot))(page);
+}
+
+void drawPage(void* page) {
+    reinterpret_cast<uint32_t(__thiscall*)(void*, uint32_t)>(virtualMethod(page, drawSlot))(page, 0);
+}
+
+void pressKey(void* page, bool up, bool down) {
+    upKey = up;
+    downKey = down;
+    reinterpret_cast<uint8_t(__thiscall*)(void*, uint32_t, uint32_t)>(virtualMethod(page, inputSlot))(page, 0, 0);
+    upKey = downKey = false;
+}
+
+void pressKeyTimes(void* page, bool up, unsigned times) {
+    for (unsigned i = 0; i < times; ++i) pressKey(page, up, !up);
+}
+
+bool rowsAre(void* page, uint32_t first, int32_t cursor) {
+    return extensionOf(page).firstVisibleItem == first && cursorOf(page) == cursor;
+}
+
+bool arrowsShown(void* page, bool up, bool down) {
+    return (layoutSlot(page, upArrowLayout)[layoutShown] != 0) == up &&
+        (layoutSlot(page, downArrowLayout)[layoutShown] != 0) == down;
+}
+
+void checkScrollingLayouts() {
+    check("scrolling: the game's descriptors match", scrollingLayoutsMatch());
+    check("scrolling: the descriptor has the base layouts and the two arrows",
+        scrollingLayouts.layoutCount == 4 && scrollingLayouts.animationCount == 8 &&
+        !strcmp(scrollingLayoutFiles[1].name, "u_st_op_mpl.layout") &&
+        !strcmp(scrollingLayoutFiles[upArrowLayout].name, "u_sign.layout") &&
+        !strcmp(scrollingAnimations[3].name, "pl_01") && scrollingAnimations[3].layout == 1 &&
+        !strcmp(scrollingAnimations[upArrowShown].name, "sign_white") && scrollingAnimations[upArrowShown].layout == 2 &&
+        !strcmp(scrollingAnimations[downArrowMoved].name, "sign_up") && scrollingAnimations[downArrowMoved].layout == 3);
+    auto mapping = reinterpret_cast<LayoutDescriptor*>(fake(controlMappingLayouts));
+    mapping->layoutCount = 3;
+    check("scrolling: another control mapping descriptor does not match", !scrollingLayoutsMatch());
+    mapping->layoutCount = 4;
+}
+
+void checkScrollingPage() {
+    checkScrollingLayouts();
+    const uint32_t definition = addScrollingPageDefinition();
+    const unsigned slotsMadeBefore = slotSetsMade, slotsReleasedBefore = slotSetsReleased;
+    void* page = createModPage(definition);
+    check("scrolling: a page of 12 items gets the scrolling methods", page &&
+        field<uintptr_t*>(page, 0) == scrollingPageMethods && extensionOf(page).itemCount == scrollingItemCount);
+    if (!page) return;
+    check("scrolling: the page's slots are made again for the scrolling descriptor",
+        field<const LayoutDescriptor*>(page, pageLayoutDescriptor) == &scrollingLayouts &&
+        field<uint16_t>(page, slotCountsOffset) == 4 && field<uint16_t>(page, slotCountsOffset + 2) == 8 &&
+        slotSetsReleased == slotsReleasedBefore + 2 && slotSetsMade == slotsMadeBefore + 2 + 2);  // Constructor, then ours
+    uint8_t* downArrow = layoutSlot(page, downArrowLayout);
+    check("scrolling: the arrows are placed from the screen centre, the down one turned",
+        field<float>(layoutSlot(page, upArrowLayout), layoutX) == 755 - 640 &&
+        field<float>(layoutSlot(page, upArrowLayout), layoutY) == 164 - 360 &&
+        field<float>(downArrow, layoutY) == 548 - 360 && field<float>(downArrow, layoutRotation) == 180);
+
+    const unsigned baseUpdatesBefore = baseUpdates;
+    updatePage(page);
+    check("scrolling: before the layouts are loaded, update is the base one only",
+        baseUpdates == baseUpdatesBefore + 1 && animationsPlayed.empty() && animationsAdvanced == 0);
+
+    reinterpret_cast<void(__thiscall*)(void*)>(virtualMethod(page, initializeSlot))(page);
+    const auto vectorBegin = field<void**>(page, itemVector);
+    check("scrolling: all 12 items are built in a vector made larger", extensionOf(page).built &&
+        field<void**>(page, itemVector + 4) - vectorBegin == 12 && field<void**>(page, itemVector + 8) - vectorBegin == 12 &&
+        vectorBegin[11] == itemsOf(page)[11]);
+    check("scrolling: the values of all 12 items are read", modC.reads == 1 && itemsOf(page)[2][itemToggleState] == 1 &&
+        itemsOf(page)[11][itemToggleState] == 0);
+
+    updatePage(page);
+    check("scrolling: update shows only the down arrow and runs the arrows",
+        arrowsShown(page, false, true) && baseUpdates == baseUpdatesBefore + 2 && animationsAdvanced == 4 &&
+        layoutsUpdated == 2);
+    drawPage(page);
+    check("scrolling: draw shows the base draw 8 rows from the first item, then the down arrow",
+        lastDraw.begin == vectorBegin && lastDraw.count == 8 && lastDraw.cursor == noCursor && layoutsDrawn == 1 &&
+        field<void**>(page, itemVector + 4) - field<void**>(page, itemVector) == 12);
+
+    pressKeyTimes(page, false, 8);
+    check("scrolling: down 8 times from no item reaches the last row", rowsAre(page, 0, 7));
+    animationsPlayed.clear();
+    pressKey(page, false, true);
+    check("scrolling: down from the last row moves the rows, and the cursor to item 8",
+        rowsAre(page, 1, 8) && lastInput.begin == vectorBegin + 1 && lastInput.count == 8 && lastInput.cursor == 6 &&
+        animationsPlayed.size() == 1 && animationsPlayed[0] == downArrowMoved);
+    updatePage(page);
+    check("scrolling: with items above and below, both arrows show", arrowsShown(page, true, true));
+    pressKeyTimes(page, false, 3);
+    check("scrolling: down to the last item", rowsAre(page, 4, 11));
+    updatePage(page);
+    check("scrolling: at the end, only the up arrow shows", arrowsShown(page, true, false));
+    pressKey(page, false, true);
+    check("scrolling: down from the last item gives no item", rowsAre(page, 4, noCursor));
+    pressKey(page, false, true);
+    check("scrolling: down from no item goes to the first item", rowsAre(page, 0, 0));
+    pressKey(page, true, false);
+    check("scrolling: up from the first item gives no item", rowsAre(page, 0, noCursor));
+    pressKey(page, true, false);
+    check("scrolling: up from no item goes to the last item", rowsAre(page, 4, 11));
+    pressKeyTimes(page, true, 8);
+    check("scrolling: up from the top row moves the rows", rowsAre(page, 3, 3));
+
+    const unsigned soundsBefore = soundsPlayed;
+    clickAt(downArrowCentre);
+    pressKey(page, false, false);
+    check("scrolling: a click on the down arrow turns the rows to the end, the cursor 8 items down",
+        rowsAre(page, 4, 11) && soundsPlayed == soundsBefore + 1);
+    clickAt(upArrowCentre);
+    pressKey(page, false, false);
+    check("scrolling: a click on the up arrow turns a screen of rows up", rowsAre(page, 0, 3) &&
+        soundsPlayed == soundsBefore + 2);
+    pressKey(page, false, false);
+    check("scrolling: the up arrow does nothing at the top", rowsAre(page, 0, 3) && soundsPlayed == soundsBefore + 2);
+    clickAt({upArrowCentre.x + 30, downArrowCentre.y});
+    pressKey(page, false, false);
+    check("scrolling: a click beside the arrow does nothing", rowsAre(page, 0, 3));
+    releasePointer();
+
+    cursorOf(page) = 10;
+    drawPage(page);
+    check("scrolling: draw first brings a cursor set elsewhere into the rows",
+        rowsAre(page, 3, 10) && lastDraw.begin == vectorBegin + 3 && lastDraw.cursor == 7);
+
+    const auto changed = reinterpret_cast<uint32_t(__thiscall*)(void*, void*)>(virtualMethod(page, itemChangedSlot));
+    itemsOf(page)[10][itemToggleState] = 1;
+    check("scrolling: a change of item 10 is reported as item 10",
+        changed(page, itemsOf(page)[10]) == 1 && modC.lastItem == 10 && modC.lastValue == 1);
+
+    const unsigned destroyedBefore = pagesDestroyed;
+    destroyGameObject(page);
+    check("scrolling: the page is destroyed with its slots", pagesDestroyed == destroyedBefore + 1 &&
+        slotSetsReleased == slotSetsMade);
+    check("no unexpected page method was called by the scrolling page", unexpectedMethodCalls == 0);
+}
+
 }  // namespace
 
 // The texts are resolved once per process; this resolves them again, after every other check.
@@ -527,6 +952,7 @@ int main() {
     checkTitleScreen();
     checkPauseMenu();
     checkGameEvents();
+    checkScrollingPage();
     checkJapaneseTexts();
     check("every object the hooks allocated was released", objectsAllocated == objectsReleased);
 

@@ -119,7 +119,7 @@ inline const char* optionsPageProblem(const LocalizedText* title, const OptionIt
     if (!hostRegistry.supported.options) return "this version of the game is not supported";
     if (!title || !isValidText(*title, maxOptionsTitleChars))
         return "the title is missing in a language, empty, or longer than 63 characters";
-    if (!items || count == 0 || count > maxOptionsItems) return "a page needs 1 to 8 items";
+    if (!items || count == 0) return "a page needs at least 1 item";
     if (!callbacks || !callbacks->read || !callbacks->changed) return "the read and changed callbacks are required";
     for (uint32_t i = 0; i < count; ++i) {
         if (const char* problem = optionItemProblem(items[i])) return problem;
