@@ -46,9 +46,3 @@ make loader                # Build only the ModLoader and copy it to GAME_DIR
 ### Making a Mod
 
 See [docs/MOD_API.md](docs/MOD_API.md).
-
-### Releases
-
-Pushing a `v*` tag makes GitHub Actions build and test, and attach `wots4-modloader-<version>.zip` (`dinput8.dll` and a README) to the Release.
-
-Each Mod is released from its own repository (`wots4-mod-<name>-<version>.zip`).

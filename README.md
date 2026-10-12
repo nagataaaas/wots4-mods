@@ -46,9 +46,3 @@ make loader                # ModLoader だけをビルドして GAME_DIR へコ�
 ### Mod の作り方
 
 [docs/MOD_API.md](docs/MOD_API.md) を見てください。
-
-### リリース
-
-`v*` のタグを push すると、GitHub Actions がビルドとテストを行い、`wots4-modloader-<版>.zip`（`dinput8.dll` と README）を Release に添付します。
-
-各 Mod は、それぞれのリポジトリでリリースします（`wots4-mod-<名前>-<版>.zip`）。
