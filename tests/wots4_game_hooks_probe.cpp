@@ -642,7 +642,14 @@ void checkTitleScreen() {
     callAt(0x676120, {0, address(parent)});
     check("title: no pages while the game texts are not loaded",
         listEntries.empty() && !titlePages.find(reinterpret_cast<uintptr_t>(parent)) && !hostRegistry.textsResolved);
+    hostRegistry.supported.gameTexts = true;
+    check("gameText: nothing while the game texts are not loaded", !findGameText(502));
     loadGameTexts();
+    const wchar_t* connect = findGameText(502);
+    check("gameText: a loaded number gives the game's string", connect && std::wstring(connect) == L"Connect");
+    check("gameText: a number past the table gives nothing", !findGameText(gameTextCount));
+    hostRegistry.supported.gameTexts = false;
+    check("gameText: nothing in an unsupported exe", !findGameText(502));
 
     callAt(0x676120, {0, address(parent)});
     const TitlePages* entry = titlePages.find(reinterpret_cast<uintptr_t>(parent));

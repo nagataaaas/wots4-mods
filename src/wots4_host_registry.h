@@ -55,6 +55,7 @@ struct SupportedGameHooks {
     bool options = false;
     bool frame = false;
     bool optionsSaved = false;
+    bool gameTexts = false;
 };
 
 struct HostRegistry {

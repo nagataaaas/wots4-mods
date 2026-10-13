@@ -135,7 +135,7 @@ void logLoadResult(const wots4::LoadResult& result) {
 
 const wots4::HostApi hostApi{sizeof(wots4::HostApi), wots4::modApiVersion,
     hostLog, wots4::claimHook, wots4::releaseHookClaims,
-    wots4::addOptionsPage, wots4::onFrame, wots4::onOptionsSaved};
+    wots4::addOptionsPage, wots4::onFrame, wots4::onOptionsSaved, wots4::game::findGameText};
 
 void registryLog(HMODULE owner, const std::string& message) {
     writeLog(ownerName(owner).c_str(), message);

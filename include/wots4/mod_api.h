@@ -85,6 +85,14 @@ struct HostApi {
     BOOL (WINAPI* onFrame)(HMODULE owner, GameEventCallback callback, void* context);
     // Called after the game wrote its options to S4-SETTINGS.ini.
     BOOL (WINAPI* onOptionsSaved)(HMODULE owner, GameEventCallback callback, void* context);
+
+    // HostApi only grows at the end, and an older ModLoader may lack the members
+    // below. A Mod that uses one checks size >= offsetof(HostApi, member) + sizeof(member).
+
+    // GameTextUI number in the game's language, or nullptr if the game has not loaded
+    // its texts yet, the number is out of range, or this version of the game is not
+    // supported. The game owns the string: copy it on the game thread before keeping it.
+    const wchar_t* (WINAPI* findGameText)(uint32_t number);
 };
 
 // Passed to Wots4ModInitialize.

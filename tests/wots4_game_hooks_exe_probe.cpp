@@ -110,7 +110,8 @@ int wmain(int argc, wchar_t** argv) {
 
     prepareGameHooks(reinterpret_cast<HMODULE>(image), owner);
     check("the exe copy is the supported version, every site matches",
-        hostRegistry.supported.options && hostRegistry.supported.frame && hostRegistry.supported.optionsSaved);
+        hostRegistry.supported.options && hostRegistry.supported.frame && hostRegistry.supported.optionsSaved &&
+        hostRegistry.supported.gameTexts);
     check("every site is reserved for the ModLoader",
         sitesReserved(optionsMenuSites) && sitesReserved(frameSites) && sitesReserved(optionsSavedSites));
     check("a Mod cannot reserve the pause menu builder",
@@ -152,8 +153,9 @@ int wmain(int argc, wchar_t** argv) {
     storeLanguage[2] ^= 1;
     hookClaims.clear();
     prepareGameHooks(reinterpret_cast<HMODULE>(image), owner);
-    check("with the language code changed, options pages are unavailable and the rest still works",
-        !hostRegistry.supported.options && hostRegistry.supported.frame && hostRegistry.supported.optionsSaved);
+    check("with the language code changed, options pages and game texts are unavailable and the rest still works",
+        !hostRegistry.supported.options && !hostRegistry.supported.gameTexts && hostRegistry.supported.frame &&
+        hostRegistry.supported.optionsSaved);
     storeLanguage[2] ^= 1;
 
     uint8_t* wrongVersion = image;
@@ -162,7 +164,8 @@ int wmain(int argc, wchar_t** argv) {
     hookClaims.clear();
     prepareGameHooks(reinterpret_cast<HMODULE>(wrongVersion), owner);
     check("another exe version is refused without reserving anything",
-        !hostRegistry.supported.options && !hostRegistry.supported.frame && hookClaims.empty());
+        !hostRegistry.supported.options && !hostRegistry.supported.frame && !hostRegistry.supported.gameTexts &&
+        hookClaims.empty());
 
     VirtualFree(image, 0, MEM_RELEASE);
     printf("RESULT %u passed, %u failed (a mapped copy of the exe only; no game process, no game function called)\n",

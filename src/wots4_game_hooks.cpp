@@ -1417,16 +1417,28 @@ void prepareGameHooks(HMODULE game, HMODULE owner) {
     hookOwner = owner;
     hostRegistry.supported = {};
     if (!exeTimestampMatches(game)) {
-        registryLog(nullptr, "this game exe is not the supported version; options pages, onFrame and onOptionsSaved are unavailable");
+        registryLog(nullptr, "this game exe is not the supported version; options pages, onFrame, onOptionsSaved and findGameText are unavailable");
         return;
     }
+    hostRegistry.supported.gameTexts = languageCodeMatches();
+    if (!hostRegistry.supported.gameTexts) registryLog(nullptr, "the game text language code is not as expected; findGameText is unavailable");
     hostRegistry.supported.options =
-        sitesMatch(optionsMenuSites) && languageCodeMatches() && scrollingLayoutsMatch() && claimSites(optionsMenuSites);
+        sitesMatch(optionsMenuSites) && hostRegistry.supported.gameTexts && scrollingLayoutsMatch() &&
+        claimSites(optionsMenuSites);
     hostRegistry.supported.frame = sitesMatch(frameSites) && claimSites(frameSites);
     hostRegistry.supported.optionsSaved = sitesMatch(optionsSavedSites) && claimSites(optionsSavedSites);
     if (!hostRegistry.supported.options) registryLog(nullptr, "the options menu code is not as expected; options pages are unavailable");
     if (!hostRegistry.supported.frame) registryLog(nullptr, "the frame update code is not as expected; onFrame is unavailable");
     if (!hostRegistry.supported.optionsSaved) registryLog(nullptr, "the options save code is not as expected; onOptionsSaved is unavailable");
+}
+
+const wchar_t* WINAPI findGameText(uint32_t number) {
+    if (!hostRegistry.supported.gameTexts) return nullptr;
+    __try {
+        return gameTextString(number);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
 }
 
 void installGameHooks() {

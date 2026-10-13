@@ -70,6 +70,11 @@ Contents of `ModContext`:
 | `addOptionsPage(owner, title, items, count, callbacks)`  | Adds a page to the game's options (below)                                                |
 | `onFrame(owner, callback, context)`                      | Calls `callback(context)` once per game frame, after the game's update                   |
 | `onOptionsSaved(owner, callback, context)`               | Calls `callback(context)` after the game wrote its options to `S4-SETTINGS.ini`          |
+| `findGameText(number)`                                   | Text number `number` of the game's UI texts (GameTextUI) in the game's language (below)  |
+
+`HostApi` only grows at the end, and `size` is `sizeof(wots4::HostApi)` of the ModLoader. A ModLoader older than the SDK may lack the last members, so check only the members the Mod uses: `host->size >= offsetof(wots4::HostApi, findGameText) + sizeof(host->findGameText)`. Checking `host->size >= sizeof(wots4::HostApi)` refuses older ModLoaders even when the Mod does not use the new members.
+
+`findGameText` can be called at any time on the game's thread. It returns `nullptr` while the game has not loaded its texts (they are loaded before the title screen), for a number past the end of the table, and when this version of the game is not supported. The game owns the string; copy it before keeping it. Unlike `wots4::gameText` on options pages, the text is not copied by the ModLoader. Some UI texts are made to follow a name, so they may begin with a space or a particle.
 
 - `claim` only reserves. The Mod does the patching itself (MinHook, etc.).
 - Call `claim` and `releaseClaims` from the same thread as initialization (the game's thread).
