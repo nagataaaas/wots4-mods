@@ -18,7 +18,7 @@ Steam 版『侍道4』（Way of the Samurai 4）向けの ModLoader です。
 
 ## インストール
 
-### 自動インストール
+### 自動インストール（推奨）
 
 1. ゲームを終了してください。
 2. [WayOfTheSamurai4ModInstaller.exe](https://github.com/nagataaaas/wots4-mods/releases/latest/download/WayOfTheSamurai4ModInstaller.exe) をダウンロードして実行してください。
@@ -28,7 +28,8 @@ Steam 版『侍道4』（Way of the Samurai 4）向けの ModLoader です。
 
 ModLoader と Mod の更新も、同じ手順でできます。Mod の設定（`config.ini`）は引き継がれます。
 
-### 手動インストール
+<details>
+<summary>手動インストール</summary>
 
 1. ゲームを終了してください。
 2. [Releases](../../releases) から `wots4-modloader-<バージョン>.zip` をダウンロードし、解凍してください。
@@ -36,6 +37,8 @@ ModLoader と Mod の更新も、同じ手順でできます。Mod の設定（`
 4. ゲームを起動してください。Mod の読み込みの結果は、インストールフォルダの `mod_loader.log` に書き出されます。
 
 Mod は、上の表から各 Mod のリポジトリを開いて入手し、それぞれの README の手順で入れてください。全体の配置は [docs/INSTALL.md](docs/INSTALL.md) にあります。
+
+</details>
 
 ## アンインストール
 

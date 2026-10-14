@@ -18,7 +18,7 @@ Place it in the game folder as `dinput8.dll`, and it loads each Mod's `mods/<nam
 
 ## Installation
 
-### Automatic installation
+### Automatic installation (recommended)
 
 1. Close the game.
 2. Download and run [WayOfTheSamurai4ModInstaller.exe](https://github.com/nagataaaas/wots4-mods/releases/latest/download/WayOfTheSamurai4ModInstaller.exe).
@@ -28,7 +28,8 @@ Place it in the game folder as `dinput8.dll`, and it loads each Mod's `mods/<nam
 
 The same steps update the ModLoader and the Mods. The Mods' settings (`config.ini`) are kept.
 
-### Manual installation
+<details>
+<summary>Manual installation</summary>
 
 1. Close the game.
 2. Download `wots4-modloader-<version>.zip` from [Releases](../../releases) and extract it.
@@ -36,6 +37,8 @@ The same steps update the ModLoader and the Mods. The Mods' settings (`config.in
 4. Start the game. The results of loading the Mods are written to `mod_loader.log` in the installation folder.
 
 Get each Mod from its repository, linked in the table above, and install it following its README. [docs/INSTALL.md](docs/INSTALL.md) shows the overall layout.
+
+</details>
 
 ## Uninstallation
 
