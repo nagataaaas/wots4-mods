@@ -25,6 +25,13 @@ Get each Mod from its repository, linked in the table above.
 
 Requirements: Visual Studio 2022 or later (Desktop development with C++), CMake 3.25 or later
 
+The Mods in the table above are submodules in `mods/`. To build them together, fetch the submodules as well.
+
+```bash
+git clone --recursive https://github.com/nagataaaas/wots4-mods.git
+# If already cloned: git submodule update --init
+```
+
 ```bash
 cmake -S . -B build -A Win32
 cmake --build build --config Release
@@ -33,7 +40,7 @@ ctest --test-dir build -C Release -LE needs_exe
 
 - The output goes to `build/game/`, laid out the same way as the game folder (`dinput8.dll`, `mods/<name>/mod.dll`).
 - Tests labeled `needs_exe` use the game's exe, so the example above skips them.
-- Put a Mod's source (a folder with a `CMakeLists.txt`) in `mods/<name>/` and it is built along with the ModLoader. `mods/` is not tracked by Git.
+- Put a Mod's source (a folder with a `CMakeLists.txt`) in `mods/<name>/` and it is built along with the ModLoader. Mods other than the submodules are not tracked by Git.
 
 ### Installing into the game folder (make)
 

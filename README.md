@@ -25,6 +25,13 @@ Mod は、上の表から各 Mod のリポジトリを開いて入手してく�
 
 必要なもの：Visual Studio 2022 以降（C++ によるデスクトップ開発）、CMake 3.25 以降
 
+上の表の Mod は `mods/` にサブモジュールとして入っています。一緒にビルドするときは、サブモジュールも取得してください。
+
+```bash
+git clone --recursive https://github.com/nagataaaas/wots4-mods.git
+# クローン済みなら：git submodule update --init
+```
+
 ```bash
 cmake -S . -B build -A Win32
 cmake --build build --config Release
@@ -33,7 +40,7 @@ ctest --test-dir build -C Release -LE needs_exe
 
 - 出力は `build/game/` に、ゲームのフォルダと同じ並びで置かれます（`dinput8.dll`、`mods/<名前>/mod.dll`）。
 - `needs_exe` のテストはゲームの exe を使うので、上の例では除いています。
-- Mod のソース（`CMakeLists.txt` を含むフォルダ）を `mods/<名前>/` に置くと、ModLoader と一緒にビルドされます。`mods/` は Git で追跡しません。
+- Mod のソース（`CMakeLists.txt` を含むフォルダ）を `mods/<名前>/` に置くと、ModLoader と一緒にビルドされます。サブモジュール以外の Mod は Git で追跡しません。
 
 ### ゲームのフォルダへ入れる（make）
 
