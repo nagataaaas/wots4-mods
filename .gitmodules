@@ -13,3 +13,6 @@
 [submodule "mods/tweaks"]
 	path = mods/tweaks
 	url = https://github.com/nagataaaas/wots4-tweaks.git
+[submodule "mods/fps_uncap"]
+	path = mods/fps_uncap
+	url = https://github.com/nagataaaas/wots4-fps-uncap.git
