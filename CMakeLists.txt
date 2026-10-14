@@ -12,6 +12,9 @@ endif()
 # ModLoader: dinput8.dll, placed in the same folder as the game exe
 wots4_add_loader(INSTALL)
 
+# WayOfTheSamurai4ModInstaller.exe, released next to the ModLoader zip
+add_subdirectory(installer)
+
 if(WOTS4_BUILD_TESTS)
     add_subdirectory(tests)
     add_subdirectory(templates/mod)  # Also check that the Mod template builds
