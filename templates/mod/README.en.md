@@ -17,6 +17,23 @@
 
 ## Installation
 
+<!-- The installer lists a Mod only after it is added to wots4-mods as a submodule under mods/. Until then, remove the automatic installation part. -->
+
+### Automatic installation (recommended)
+
+1. Close the game.
+2. Download and run [WayOfTheSamurai4ModInstaller.exe](https://github.com/nagataaaas/wots4-mods/releases/latest/download/WayOfTheSamurai4ModInstaller.exe).
+   - If "Windows protected your PC" appears, click "More info" → "Run anyway".
+   - When asked whether to allow it to make changes as administrator, click "Yes" (it writes to the game folder).
+3. Follow the screen and choose `{mod-dir}` in the list of Mods. Move with Up and Down, choose with Space and confirm with Enter.
+
+<!-- Keep the sentence about config.ini only if the release includes config.ini. -->
+
+The ModLoader is installed along with it. The same steps update the Mod, and your settings (`config.ini`) are kept.
+
+<details>
+<summary>Manual installation</summary>
+
 > [!WARNING]
 > Install [wots4-mods (ModLoader)](https://github.com/nagataaaas/wots4-mods) first.
 
@@ -28,6 +45,8 @@
 4. Confirm that `{game installation folder}/mods/{mod-dir}/mod.dll` exists, then start the game.
 
 <!-- If the release includes config.ini, explain how to preserve existing settings when updating. -->
+
+</details>
 
 ## Uninstallation
 
