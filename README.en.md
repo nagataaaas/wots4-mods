@@ -18,6 +18,18 @@ Place it in the game folder as `dinput8.dll`, and it loads each Mod's `mods/<nam
 
 ## Installation
 
+### Automatic installation
+
+1. Close the game.
+2. Download and run [WayOfTheSamurai4ModInstaller.exe](https://github.com/nagataaaas/wots4-mods/releases/latest/download/WayOfTheSamurai4ModInstaller.exe).
+   - If "Windows protected your PC" appears, click "More info" → "Run anyway".
+   - When asked whether to allow it to make changes as administrator, click "Yes" (it writes to the game folder).
+3. Follow the screen to choose the language, the game folder and the Mods to install. Move with Up and Down, choose Mods with Space and confirm with Enter.
+
+The same steps update the ModLoader and the Mods. The Mods' settings (`config.ini`) are kept.
+
+### Manual installation
+
 1. Close the game.
 2. Download `wots4-modloader-<version>.zip` from [Releases](../../releases) and extract it.
 3. Copy the extracted `dinput8.dll` into the game's installation folder (the folder containing `WayOfTheSamurai4.exe`). To open the installation folder, right-click the game in your Steam library and choose "Manage" → "Browse local files".
@@ -51,7 +63,7 @@ cmake --build build --config Release
 ctest --test-dir build -C Release -LE needs_exe
 ```
 
-- The output goes to `build/game/`, laid out the same way as the game folder (`dinput8.dll`, `mods/<name>/mod.dll`).
+- The output goes to `build/game/`, laid out the same way as the game folder (`dinput8.dll`, `mods/<name>/mod.dll`). The installer is `build/installer/WayOfTheSamurai4ModInstaller.exe`.
 - Tests labeled `needs_exe` use the game's exe, so the example above skips them.
 - Put a Mod's source (a folder with a `CMakeLists.txt`) in `mods/<name>/` and it is built along with the ModLoader. Mods other than the submodules are not tracked by Git.
 

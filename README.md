@@ -18,6 +18,18 @@ Steam 版『侍道4』（Way of the Samurai 4）向けの ModLoader です。
 
 ## インストール
 
+### 自動インストール
+
+1. ゲームを終了してください。
+2. [WayOfTheSamurai4ModInstaller.exe](https://github.com/nagataaaas/wots4-mods/releases/latest/download/WayOfTheSamurai4ModInstaller.exe) をダウンロードして実行してください。
+   - 「Windows によって PC が保護されました」と出たら、「詳細情報」→「実行」を押してください。
+   - 管理者として実行してよいかの確認が出たら、「はい」を押してください（ゲームのフォルダに書き込むためです）。
+3. 画面の案内に沿って、言語、ゲームのフォルダ、入れる Mod を選んでください。Mod は ↑↓ で移動し、Space で選び、Enter で確定します。
+
+ModLoader と Mod の更新も、同じ手順でできます。Mod の設定（`config.ini`）は引き継がれます。
+
+### 手動インストール
+
 1. ゲームを終了してください。
 2. [Releases](../../releases) から `wots4-modloader-<バージョン>.zip` をダウンロードし、解凍してください。
 3. 解凍して得られた `dinput8.dll` を、侍道4のインストールフォルダ（`WayOfTheSamurai4.exe` がある場所）へコピーしてください。インストールフォルダは、Steam のライブラリでゲームを右クリックし、「管理」→「ローカルファイルを閲覧」で開けます。
@@ -51,7 +63,7 @@ cmake --build build --config Release
 ctest --test-dir build -C Release -LE needs_exe
 ```
 
-- 出力は `build/game/` に、ゲームのフォルダと同じ並びで置かれます（`dinput8.dll`、`mods/<名前>/mod.dll`）。
+- 出力は `build/game/` に、ゲームのフォルダと同じ並びで置かれます（`dinput8.dll`、`mods/<名前>/mod.dll`）。インストーラーは `build/installer/WayOfTheSamurai4ModInstaller.exe` です。
 - `needs_exe` のテストはゲームの exe を使うので、上の例では除いています。
 - Mod のソース（`CMakeLists.txt` を含むフォルダ）を `mods/<名前>/` に置くと、ModLoader と一緒にビルドされます。サブモジュール以外の Mod は Git で追跡しません。
 

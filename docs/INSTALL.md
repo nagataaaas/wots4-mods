@@ -4,6 +4,8 @@ This is for the Steam version of Way of the Samurai 4 (`WayOfTheSamurai4.exe`).
 
 ## Installing
 
+The easiest way is `WayOfTheSamurai4ModInstaller.exe` from the ModLoader's GitHub Releases: it finds the game, installs or updates the ModLoader and the Mods you choose, and keeps the Mods' settings. To install by hand instead:
+
 1. Open the game folder. In your Steam library, right-click the game and choose "Manage" → "Browse local files".
 2. Close the game, then copy these into the folder that contains `WayOfTheSamurai4.exe`:
    - `dinput8.dll` from the ModLoader zip (`wots4-modloader-<version>.zip`)
