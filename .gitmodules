@@ -10,3 +10,6 @@
 [submodule "mods/post_fx"]
 	path = mods/post_fx
 	url = https://github.com/nagataaaas/wots4-post-fx.git
+[submodule "mods/tweaks"]
+	path = mods/tweaks
+	url = https://github.com/nagataaaas/wots4-tweaks.git
