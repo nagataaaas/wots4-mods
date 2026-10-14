@@ -14,10 +14,21 @@ Place it in the game folder as `dinput8.dll`, and it loads each Mod's `mods/<nam
 | [harakiri](https://github.com/nagataaaas/wots4-harakiri) | Adds a "Harakiri" (one-hit death) difficulty. |
 | [debugger](https://github.com/nagataaaas/wots4-debugger) | Provides debugging tools for making Mods. |
 
-## For users
+## Installation
 
-Download `wots4-modloader-<version>.zip` from [Releases](../../releases) and install it following [docs/INSTALL.md](docs/INSTALL.md).
-Get each Mod from its repository, linked in the table above.
+1. Close the game.
+2. Download `wots4-modloader-<version>.zip` from [Releases](../../releases) and extract it.
+3. Copy the extracted `dinput8.dll` into the game's installation folder (the folder containing `WayOfTheSamurai4.exe`). To open the installation folder, right-click the game in your Steam library and choose "Manage" → "Browse local files".
+4. Start the game. The results of loading the Mods are written to `mod_loader.log` in the installation folder.
+
+Get each Mod from its repository, linked in the table above, and install it following its README. [docs/INSTALL.md](docs/INSTALL.md) shows the overall layout.
+
+## Uninstallation
+
+1. Close the game.
+2. Delete `dinput8.dll` from the game's installation folder.
+
+Once the ModLoader is removed, the Mods in `mods/` are no longer loaded either. If you no longer need the Mods, remove them following their READMEs. You may also delete `mod_loader.log` if you do not need it.
 
 ## For developers
 

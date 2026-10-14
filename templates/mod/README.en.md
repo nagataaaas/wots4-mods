@@ -29,6 +29,13 @@
 
 <!-- If the release includes config.ini, explain how to preserve existing settings when updating. -->
 
+## Uninstallation
+
+1. Close the game.
+2. Delete the `{game installation folder}/mods/{mod-dir}/` folder.
+
+<!-- If removing the Mod leaves effects behind (for example, saves that need the Mod to load), explain them here. If the folder holds settings, mention that they are deleted too. -->
+
 ## Settings
 
 <!-- Remove this entire section if the Mod has no settings. Replace the placeholders with actual sections, keys, defaults, and accepted values. Match the path and restart instructions to the Mod's behavior. -->

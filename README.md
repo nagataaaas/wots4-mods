@@ -14,10 +14,21 @@ Steam 版『侍道4』（Way of the Samurai 4）向けの ModLoader です。
 | [harakiri](https://github.com/nagataaaas/wots4-harakiri) | 難易度「一撃死」を追加します。 |
 | [debugger](https://github.com/nagataaaas/wots4-debugger) | Mod を作るときに使うデバッグツールです。 |
 
-## 使う人向け
+## インストール
 
-[Releases](../../releases) から `wots4-modloader-<バージョン>.zip` をダウンロードし、[docs/INSTALL.md](docs/INSTALL.md) の手順で入れてください。
-Mod は、上の表から各 Mod のリポジトリを開いて入手してください。
+1. ゲームを終了してください。
+2. [Releases](../../releases) から `wots4-modloader-<バージョン>.zip` をダウンロードし、解凍してください。
+3. 解凍して得られた `dinput8.dll` を、侍道4のインストールフォルダ（`WayOfTheSamurai4.exe` がある場所）へコピーしてください。インストールフォルダは、Steam のライブラリでゲームを右クリックし、「管理」→「ローカルファイルを閲覧」で開けます。
+4. ゲームを起動してください。Mod の読み込みの結果は、インストールフォルダの `mod_loader.log` に書き出されます。
+
+Mod は、上の表から各 Mod のリポジトリを開いて入手し、それぞれの README の手順で入れてください。全体の配置は [docs/INSTALL.md](docs/INSTALL.md) にあります。
+
+## アンインストール
+
+1. ゲームを終了してください。
+2. 侍道4のインストールフォルダから `dinput8.dll` を削除してください。
+
+ModLoader を削除すると、`mods/` の Mod も読み込まれなくなります。Mod も要らなければ、各 Mod の README の手順で削除してください。`mod_loader.log` も、要らなければ削除してかまいません。
 
 ## 作る人向け
 
