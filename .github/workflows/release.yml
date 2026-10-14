@@ -1,6 +1,6 @@
 name: Release
 
-# Release only the ModLoader (dinput8.dll). Each Mod is released from its own repository.
+# Release only the ModLoader (dinput8.dll) and the installer. Each Mod is released from its own repository.
 on:
   push:
     tags: ["v*"]
@@ -14,12 +14,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # WOTS4_VERSION goes into the version information of dinput8.dll and the installer
       - name: build and test
         run: |
-          cmake -S . -B build -A Win32 -DWOTS4_BUILD_MODS=OFF
+          cmake -S . -B build -A Win32 -DWOTS4_BUILD_MODS=OFF -DWOTS4_VERSION="${{ github.ref_name }}"
           cmake --build build --config Release
           ctest --test-dir build -C Release -LE needs_exe --output-on-failure --timeout 300
 
+      # The installer is a file of its own, without the version in its name, so that
+      # releases/latest/download/WayOfTheSamurai4ModInstaller.exe always gets the latest one
       - name: create zip
         shell: pwsh
         run: |
@@ -27,10 +30,11 @@ jobs:
           cmake --install build --config Release --component loader --prefix stage
           New-Item -ItemType Directory -Force dist | Out-Null
           Compress-Archive -Path stage/* -DestinationPath "dist/wots4-modloader-$version.zip"
-          Get-ChildItem -Recurse stage
+          Copy-Item build/installer/WayOfTheSamurai4ModInstaller.exe dist/
+          Get-ChildItem -Recurse stage, dist
 
       - name: create Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" dist/*.zip --title "ModLoader ${{ github.ref_name }}" --generate-notes
+        run: gh release create "${{ github.ref_name }}" dist/*.zip dist/WayOfTheSamurai4ModInstaller.exe --title "ModLoader ${{ github.ref_name }}" --generate-notes
