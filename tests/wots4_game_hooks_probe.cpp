@@ -354,14 +354,26 @@ uint32_t __fastcall fakePageDraw(void* page, void*, uint32_t) {
     return 1;
 }
 
+bool shownHeader(const ShownRows& rows, int32_t row) {
+    return row >= 0 && row < static_cast<int32_t>(rows.count) &&
+        field<uint32_t>(rows.begin[row], itemKind) == optionHeader;
+}
+
 // Moves the cursor like the game's input (0x645f90): up from the first item gives no
-// item, up from no item the last; down from the last item gives no item.
+// item, up from no item the last; down from the last item gives no item. One header
+// in the way is passed over.
 uint8_t __fastcall fakePageInput(void* page, void*, uint32_t, uint32_t) {
     lastInput = shownRows(page);
     int32_t& cursor = field<int32_t>(page, pageCursor);
     const auto count = static_cast<int32_t>(lastInput.count);
-    if (upKey && --cursor < noCursor) cursor = count - 1;
-    if (downKey && ++cursor >= count) cursor = noCursor;
+    if (upKey) {
+        if (shownHeader(lastInput, --cursor)) --cursor;
+        if (cursor < noCursor && shownHeader(lastInput, cursor = count - 1)) --cursor;
+    }
+    if (downKey) {
+        if (shownHeader(lastInput, ++cursor)) ++cursor;
+        if (cursor >= count) cursor = noCursor;
+    }
     return 1;
 }
 
@@ -955,6 +967,93 @@ void checkScrollingPage() {
     check("no unexpected page method was called by the scrolling page", unexpectedMethodCalls == 0);
 }
 
+// ---------------------------------------------------------------- headers
+
+// H T T T H T T T H T T H T H: 14 items, a header first and last.
+constexpr uint32_t groupedItemCount = 14;
+constexpr bool groupedHeaders[groupedItemCount] = {
+    true, false, false, false, true, false, false, false, true, false, false, true, false, true};
+ModState modD{{1, 1}};  // The header's value is not used
+
+uint32_t addGroupedPageDefinition() {
+    const LocalizedText onOff[] = {{L"はい", L"Yes"}, {L"いいえ", L"No"}};
+    std::vector<OptionItem> items;
+    for (bool header : groupedHeaders) {
+        if (header) items.push_back({optionHeader, {L"見出し", L"Group"}});
+        else items.push_back({optionToggle, {L"項目", L"Item"}, onOff, 2});
+    }
+    const OptionsPageCallbacks callbacks{&modD, readValues, valueChanged};
+    const LocalizedText title{L"ページD", L"Page D"};
+    hostRegistry.registrationOpen = true;
+    const BOOL added = addOptionsPage(reinterpret_cast<HMODULE>(0x10000), &title, items.data(), groupedItemCount,
+        &callbacks);
+    hostRegistry.registrationOpen = false;
+    hostRegistry.textsResolved = false;
+    resolveTexts();
+    return added ? static_cast<uint32_t>(hostRegistry.pages.size() - 1) : UINT32_MAX;
+}
+
+void setRows(void* page, uint32_t first, int32_t cursor) {
+    extensionOf(page).firstVisibleItem = first;
+    cursorOf(page) = cursor;
+}
+
+void clickArrow(void* page, MenuPoint arrow) {
+    clickAt(arrow);
+    pressKey(page, false, false);
+    releasePointer();
+}
+
+void checkHeaderPage() {
+    const uint32_t definition = addGroupedPageDefinition();
+    check("headers: a page with headers is registered", definition != UINT32_MAX);
+    if (definition == UINT32_MAX) return;
+    void* page = createModPage(definition);
+    check("headers: a page of 14 items scrolls", page && field<uintptr_t*>(page, 0) == scrollingPageMethods);
+    if (!page) return;
+    reinterpret_cast<void(__thiscall*)(void*)>(virtualMethod(page, initializeSlot))(page);
+    uint8_t* header = itemsOf(page)[0];
+    check("headers: a header is a kind 4 item with its label in brackets (English game), no value shown",
+        field<uint32_t>(header, itemKind) == optionHeader && header[itemValueHidden] == 1 &&
+        wcscmp(itemText(header, itemLabel), L"[Group]") == 0);
+    check("headers: read leaves the header alone and sets the toggle after it",
+        header[itemToggleState] == 0 && itemsOf(page)[1][itemToggleState] == 1);
+
+    pressKey(page, false, true);
+    check("headers: down from no item passes over the first header", rowsAre(page, 0, 1));
+    pressKey(page, true, false);
+    check("headers: up from the item under the first header gives no item", rowsAre(page, 0, noCursor));
+    setRows(page, 0, 7);
+    pressKey(page, false, true);
+    check("headers: down from the last row passes over a header and keeps the cursor in the rows",
+        rowsAre(page, 2, 9) && lastInput.begin == field<void**>(page, itemVector) + 2);
+    setRows(page, 5, 5);
+    pressKey(page, true, false);
+    check("headers: up from the top row passes over a header and moves the rows", rowsAre(page, 3, 3));
+    setRows(page, 3, 10);
+    pressKey(page, false, true);
+    check("headers: down over a header to the item under it", rowsAre(page, 5, 12));
+    pressKey(page, false, true);
+    check("headers: down from the item above the last header gives no item", rowsAre(page, 5, noCursor));
+    pressKey(page, true, false);
+    check("headers: up from no item passes over the last header", rowsAre(page, 6, 12));
+
+    setRows(page, 0, 3);
+    clickArrow(page, downArrowCentre);
+    check("headers: an arrow click that lands on a header goes one item further", rowsAre(page, 6, 12));
+    clickArrow(page, upArrowCentre);
+    check("headers: an up arrow click that lands on a header goes one item further up", rowsAre(page, 0, 3));
+    setRows(page, 0, 5);
+    clickArrow(page, downArrowCentre);
+    check("headers: an arrow click that lands on the last header goes back one item", rowsAre(page, 6, 12));
+
+    const unsigned changesBefore = modD.changes;
+    reinterpret_cast<void(__thiscall*)(void*)>(virtualMethod(page, resetItemsSlot))(page);
+    check("headers: reset reports only the toggle that is on, never a header",
+        modD.changes == changesBefore + 1 && modD.lastItem == 1 && modD.lastValue == 0);
+    destroyGameObject(page);
+}
+
 }  // namespace
 
 // The texts are resolved once per process; this resolves them again, after every other check.
@@ -966,6 +1065,8 @@ void checkJapaneseTexts() {
         hostRegistry.pages[0].title.text == L"ページA" && hostRegistry.pages[0].items[0].label.text == L"接続" &&
         hostRegistry.pages[1].items[1].choicePointers[2] == hostRegistry.pages[1].items[1].choices[2].text.c_str() &&
         wcscmp(hostRegistry.pages[1].items[1].choicePointers[2], L"高") == 0);
+    check("Japanese game: a header is in full-width brackets",
+        hostRegistry.pages.back().items[0].label.text == L"【見出し】");
 }
 
 int main() {
@@ -989,6 +1090,7 @@ int main() {
     checkPauseMenu();
     checkGameEvents();
     checkScrollingPage();
+    checkHeaderPage();
     checkJapaneseTexts();
     check("every object the hooks allocated was released", objectsAllocated == objectsReleased);
 

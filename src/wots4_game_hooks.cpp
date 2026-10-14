@@ -137,6 +137,9 @@ constexpr uint32_t itemChoices = 0x108;     // Choice: const wchar_t*[10]
 constexpr uint32_t itemChoiceArea = 0x204;  // Choice: from itemChoices to the end of the item
 constexpr uint32_t itemChoiceIndex = 0x130;
 constexpr uint32_t itemToggleState = 0x308;
+// byte. Kind 4 (a row to read, which the input passes over) draws its toggle texts
+// unless this is set (0x645deb); the game's 各種設定 page sets it on such a row.
+constexpr uint32_t itemValueHidden = 0x309;
 constexpr uint32_t itemTextChars = 128;
 
 // Parents
@@ -369,6 +372,17 @@ bool resolveText(OptionText& text, bool japanese) {
     return true;
 }
 
+bool addHeaderBrackets(OptionText& text, bool japanese) {
+    const HeaderBrackets& brackets = japanese ? japaneseHeaderBrackets : englishHeaderBrackets;
+    try {
+        text.text.insert(0, brackets.open);
+        text.text.append(brackets.close);
+    } catch (const std::bad_alloc&) {
+        return false;
+    }
+    return true;
+}
+
 // Resolves every text of every page, all at once, so that no pointer the game
 // keeps is ever moved afterwards. False if the game texts are not loaded.
 bool resolveTexts() {
@@ -378,6 +392,7 @@ bool resolveTexts() {
         if (!resolveText(page.title, japanese)) return false;
         for (OptionsItemDefinition& item : page.items) {
             if (!resolveText(item.label, japanese)) return false;
+            if (item.kind == optionHeader && !addHeaderBrackets(item.label, japanese)) return false;
             for (OptionText& choice : item.choices) {
                 if (!resolveText(choice, japanese)) return false;
             }
@@ -415,6 +430,13 @@ uint8_t* buildItem(const OptionsItemDefinition& definition) {
     if (!item) return nullptr;
     initializeItem(item);
     copyItemText(item, itemLabel, definition.label);
+    // The game draws a header without the cursor's highlight, and its input and
+    // pointer pass over it (0x645b0a, 0x646199, 0x64611e).
+    if (definition.kind == optionHeader) {
+        field<uint32_t>(item, itemKind) = optionHeader;
+        item[itemValueHidden] = 1;
+        return item;
+    }
     if (definition.kind == optionToggle) {
         copyItemText(item, itemOnText, definition.choices[0]);
         copyItemText(item, itemOffText, definition.choices[1]);
@@ -482,6 +504,7 @@ void __fastcall refreshItemsMethod(void* page, void*) {
     for (uint32_t i = 0; i < count; ++i) {
         uint8_t* item = itemsOf(page)[i];
         const OptionsItemDefinition& itemDefinition = definition.items[i];
+        if (itemDefinition.kind == optionHeader) continue;
         if (itemDefinition.kind == optionToggle) {
             item[itemToggleState] = values[i] ? 1 : 0;
             continue;
@@ -519,7 +542,7 @@ void __fastcall resetItemsMethod(void* page, void*) {
     uint8_t* const* items = itemsOf(page);
     for (uint32_t i = 0; i < extension.itemCount; ++i) {
         const OptionsItemDefinition& item = definition.items[i];
-        if (shownValue(items[i], item.kind) == item.defaultValue) continue;
+        if (item.kind == optionHeader || shownValue(items[i], item.kind) == item.defaultValue) continue;
         definition.callbacks.changed(definition.callbacks.context, i, item.defaultValue);
     }
 }
@@ -683,16 +706,23 @@ bool hasItemsBelow(const PageExtension& extension) {
     return extension.firstVisibleItem < lastFirstVisibleItem(extension);
 }
 
-void keepCursorVisible(void* page) {
-    PageExtension& extension = extensionOf(page);
-    const int32_t cursor = cursorOf(page);
+bool isHeader(void* page, int32_t item) {
+    return definitionOf(page).items[item].kind == optionHeader;
+}
+
+// Moves the rows as little as needed to show item (noCursor shows nothing).
+void bringIntoRows(PageExtension& extension, int32_t item) {
     uint32_t& first = extension.firstVisibleItem;
-    if (cursor >= 0 && static_cast<uint32_t>(cursor) < extension.itemCount) {
-        const auto item = static_cast<uint32_t>(cursor);
-        if (item < first) first = item;
-        else if (item >= first + optionsItemsPerScreen) first = item - optionsItemsPerScreen + 1;
+    if (item >= 0 && static_cast<uint32_t>(item) < extension.itemCount) {
+        const auto shown = static_cast<uint32_t>(item);
+        if (shown < first) first = shown;
+        else if (shown >= first + optionsItemsPerScreen) first = shown - optionsItemsPerScreen + 1;
     }
     if (first > lastFirstVisibleItem(extension)) first = lastFirstVisibleItem(extension);
+}
+
+void keepCursorVisible(void* page) {
+    bringIntoRows(extensionOf(page), cursorOf(page));
 }
 
 void playScrollAnimation(void* page, uint32_t firstBefore) {
@@ -700,23 +730,29 @@ void playScrollAnimation(void* page, uint32_t firstBefore) {
     if (first != firstBefore) playPageAnimation(page, first < firstBefore ? upArrowMoved : downArrowMoved);
 }
 
-// The game's input moves the cursor one row within the rows it is shown, and
-// from the last row to no item. Moving the rows first turns that step into a step
-// to the next item. It also wraps between no item and the first or last one.
+// Where the game's input (0x645f90) moves the cursor among all items: one item
+// up or down, one more past a header, and from the first or last item to no item.
+int32_t nextCursorItem(void* page, int32_t cursor, bool up) {
+    const auto count = static_cast<int32_t>(extensionOf(page).itemCount);
+    const int32_t step = up ? -1 : 1;
+    int32_t next = cursor + step;
+    if (next >= 0 && next < count && isHeader(page, next)) next += step;
+    return next >= 0 && next < count ? next : noCursor;
+}
+
+// The game's input moves the cursor within the rows it is shown, and from the
+// last row to no item. Showing the item it goes to first turns that step into a
+// step among all items. From no item it goes to the first or the last row, so
+// the rows go to the top or the bottom.
 void moveRowsForDirectionKeys(void* page) {
     const bool up = directionPressed(upPressed);
     const bool down = directionPressed(downPressed);
     if (up == down) return;
     PageExtension& extension = extensionOf(page);
     const int32_t cursor = cursorOf(page);
-    uint32_t& first = extension.firstVisibleItem;
-    const uint32_t firstBefore = first;
-    const auto firstRow = static_cast<int32_t>(first);
-    const int32_t lastRow = firstRow + static_cast<int32_t>(optionsItemsPerScreen) - 1;
-    if (up && cursor == noCursor) first = lastFirstVisibleItem(extension);
-    else if (up && cursor == firstRow && hasItemsAbove(extension)) --first;
-    else if (down && cursor == noCursor) first = 0;
-    else if (down && cursor == lastRow && hasItemsBelow(extension)) ++first;
+    const uint32_t firstBefore = extension.firstVisibleItem;
+    if (cursor == noCursor) extension.firstVisibleItem = up ? lastFirstVisibleItem(extension) : 0;
+    else bringIntoRows(extension, nextCursorItem(page, cursor, up));
     playScrollAnimation(page, firstBefore);
 }
 
@@ -739,6 +775,12 @@ void turnRows(void* page, int32_t rows) {
         const int32_t lastItem = static_cast<int32_t>(extension.itemCount) - 1;
         const int32_t moved = cursor + rows;
         cursor = moved < 0 ? 0 : moved > lastItem ? lastItem : moved;
+        // Headers are never next to each other, so the item beside one is not a header.
+        if (isHeader(page, cursor)) {
+            const int32_t step = rows < 0 ? -1 : 1;
+            cursor = cursor + step >= 0 && cursor + step <= lastItem ? cursor + step : cursor - step;
+        }
+        bringIntoRows(extension, cursor);
     }
     playScrollAnimation(page, firstBefore);
     playMenuSound(cursorMovedSound);

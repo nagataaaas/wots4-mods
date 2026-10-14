@@ -98,6 +98,32 @@ void checkPageLimits() {
     check("a toggle default other than 0 or 1 refused", !addPage(mod, L"D2", &toggleDefaultTwo, 1, &callbacks));
     OptionItem slider{static_cast<OptionKind>(1), inBoth(L"Slider"), onOff, 2};
     check("unknown item kind refused", !addPage(mod, L"K", &slider, 1, &callbacks));
+
+    const OptionItem header{optionHeader, inBoth(L"Group")};
+    const OptionItem grouped[] = {header, toggle, header, level, toggle, header};
+    check("headers before, between and after the other items accepted", addPage(mod, L"G", grouped, 6, &callbacks) &&
+        hostRegistry.pages.back().items[2].kind == optionHeader && hostRegistry.pages.back().items[2].choices.empty() &&
+        hostRegistry.pages.back().items[2].label.english.string == L"Group");
+    const OptionItem twoHeaders[] = {toggle, header, header, level};
+    check("two headers next to each other refused", !addPage(mod, L"HH", twoHeaders, 4, &callbacks));
+    check("a page of a header only refused", !addPage(mod, L"H1", &header, 1, &callbacks));
+    const OptionItem headerWithChoices{optionHeader, inBoth(L"Group"), onOff, 2};
+    const OptionItem withChoices[] = {headerWithChoices, toggle};
+    check("a header with choices refused", !addPage(mod, L"HC", withChoices, 2, &callbacks));
+    const OptionItem headerWithDefault{optionHeader, inBoth(L"Group"), nullptr, 0, 1};
+    const OptionItem withDefault[] = {headerWithDefault, toggle};
+    check("a header with a default value refused", !addPage(mod, L"HD", withDefault, 2, &callbacks));
+    const OptionItem headerWithoutLabel{optionHeader, {L"見出し", nullptr}};
+    const OptionItem withoutLabel[] = {headerWithoutLabel, toggle};
+    check("a header without the English label refused", !addPage(mod, L"HL", withoutLabel, 2, &callbacks));
+    std::wstring longHeader(126, L'h');
+    const OptionItem tooLongHeader{optionHeader, inBoth(longHeader.c_str())};
+    const OptionItem withTooLong[] = {tooLongHeader, toggle};
+    check("a 126-character header refused (its brackets take 2 of 127)", !addPage(mod, L"H126", withTooLong, 2, &callbacks));
+    longHeader.resize(125);
+    const OptionItem longestHeader{optionHeader, inBoth(longHeader.c_str())};
+    const OptionItem withLongest[] = {longestHeader, toggle};
+    check("a 125-character header accepted", addPage(mod, L"H125", withLongest, 2, &callbacks));
     const LocalizedText withNull[] = {inBoth(L"On"), {nullptr, nullptr}};
     OptionItem nullChoice{optionToggle, inBoth(L"Null"), withNull, 2};
     check("null choice refused", !addPage(mod, L"N", &nullChoice, 1, &callbacks));

@@ -98,10 +98,27 @@ inline OptionText copyText(const LocalizedText& text) {
     return {copySource(text.japanese), copySource(text.english), {}};
 }
 
+// A header shows in brackets: 【label】 in the Japanese menus, [label] in the English ones,
+// whose font may lack the full-width brackets. With them, the label still fits 127 characters.
+struct HeaderBrackets {
+    const wchar_t* open;
+    const wchar_t* close;
+};
+constexpr HeaderBrackets japaneseHeaderBrackets{L"【", L"】"};
+constexpr HeaderBrackets englishHeaderBrackets{L"[", L"]"};
+constexpr size_t headerBracketChars = 2;
+constexpr size_t maxHeaderTextChars = maxOptionTextChars - headerBracketChars;
+
 // nullptr if the item is valid, else why it is not.
 inline const char* optionItemProblem(const OptionItem& item) {
+    if (item.kind == optionHeader && !isValidText(item.label, maxHeaderTextChars))
+        return "a header label is missing in a language, empty, or longer than 125 characters";
     if (!isValidText(item.label, maxOptionTextChars))
         return "an item label is missing in a language, empty, or longer than 127 characters";
+    if (item.kind == optionHeader) {
+        if (item.choiceCount != 0 || item.defaultValue != 0) return "a header item has choices or a default value";
+        return nullptr;
+    }
     if (item.kind == optionToggle && item.choiceCount != 2) return "a toggle item needs exactly 2 choices";
     if (item.kind == optionChoice && (item.choiceCount < 2 || item.choiceCount > maxOptionChoices))
         return "a choice item needs 2 to 10 choices";
@@ -124,9 +141,15 @@ inline const char* optionsPageProblem(const LocalizedText* title, const OptionIt
         return "the title is missing in a language, empty, or longer than 63 characters";
     if (!items || count == 0) return "a page needs at least 1 item";
     if (!callbacks || !callbacks->read || !callbacks->changed) return "the read and changed callbacks are required";
+    bool hasSelectableItem = false;
     for (uint32_t i = 0; i < count; ++i) {
         if (const char* problem = optionItemProblem(items[i])) return problem;
+        const bool header = items[i].kind == optionHeader;
+        // The game's input passes over one header only; the cursor would stop on a second one.
+        if (header && i > 0 && items[i - 1].kind == optionHeader) return "two header items are next to each other";
+        hasSelectableItem |= !header;
     }
+    if (!hasSelectableItem) return "a page needs an item that is not a header";
     return nullptr;
 }
 

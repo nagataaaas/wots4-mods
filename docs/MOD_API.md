@@ -96,6 +96,7 @@ A page shows 8 items at once (`wots4::optionsItemsPerScreen`). A page with more 
 | Choices of a choice item       | 2 to 10 (`wots4::maxOptionChoices`)      |
 | Title                          | Up to 63 characters                      |
 | Item label, each choice        | Up to 127 characters                     |
+| Header label                   | Up to 125 characters                     |
 
 Item kinds (`wots4::OptionItem`):
 
@@ -103,8 +104,11 @@ Item kinds (`wots4::OptionItem`):
 | ---------------------- | ---------------------------------------------------------- | --------------------------- |
 | `wots4::optionToggle`  | 2: `choices[0]` is "on", `choices[1]` is "off"             | 1 for on, 0 for off         |
 | `wots4::optionChoice`  | 2 to 10; the player moves left and right through them      | The index of the choice     |
+| `wots4::optionHeader`  | None (`nullptr`, 0)                                        | Not used                    |
 
-`defaultValue` is the value of the item that the page's 初期設定に戻す button sets, in the same form as the values above. It must be one of the item's values.
+`defaultValue` is the value of the item that the page's 初期設定に戻す button sets, in the same form as the values above. It must be one of the item's values, and 0 for a header.
+
+A header groups the items below it. It shows only its label in brackets, `【地図】` in the Japanese menus and `[Map]` in the English ones, in the same place and style as the other labels, and the cursor and the pointer pass over it. It still counts as an item: `values` has an entry for it, which the ModLoader does not use, and the numbers of the items after it include it. Two headers next to each other are refused (the game's input passes over one only), and so is a page of headers only. A ModLoader that does not know `optionHeader` refuses the page as having an unknown kind.
 
 Every text (title, label, choice) is a `wots4::LocalizedText` with a Japanese and an English text, both required. When a menu is first built, the ModLoader shows the Japanese text if the game's menus are in Japanese, and the English text otherwise (the game has no other menu languages; a language changed in the game takes effect after a restart, as in the game).
 
@@ -122,12 +126,13 @@ The ModLoader does not store the values. To keep them, save them in the Mod's ow
 const wots4::LocalizedText onOff[] = {wots4::localizedGameText(211), wots4::localizedGameText(212)};
 const wots4::LocalizedText sizes[] = {{L"小", L"Small"}, {L"中", L"Medium"}, {L"大", L"Large"}};
 const wots4::OptionItem items[] = {
+    {wots4::optionHeader, {L"地図", L"Map"}},                               // Item 0
     {wots4::optionToggle, {L"地図を表示", L"Show the Map"}, onOff, 2, 1},  // On by default
     {wots4::optionChoice, {L"地図の大きさ", L"Map Size"}, sizes, 3, 1},     // 中 / Medium by default
 };
 const wots4::OptionsPageCallbacks callbacks{nullptr, readValues, valueChanged};
 const wots4::LocalizedText title{L"地図", L"Map"};
-if (!context->host->addOptionsPage(context->module, &title, items, 2, &callbacks)) return FALSE;
+if (!context->host->addOptionsPage(context->module, &title, items, 3, &callbacks)) return FALSE;
 ```
 
 ## Adding a Mod

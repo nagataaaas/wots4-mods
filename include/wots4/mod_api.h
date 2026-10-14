@@ -43,6 +43,12 @@ inline LocalizedText localizedGameText(uint32_t number) {
 enum OptionKind : uint32_t {
     optionToggle = 0,  // Two choices: choices[0] is "on" (value 1), choices[1] is "off" (value 0)
     optionChoice = 3,  // 2 to maxOptionChoices choices; the value is the index
+    // A label without a value that groups the items below it, shown as 【label】 (Japanese
+    // menus) or [label] (English menus), so up to maxOptionTextChars - 2 characters.
+    // The cursor passes over it.
+    // No choices (nullptr, 0) and defaultValue 0; its entry in values is not used.
+    // Not first after another header, and a page needs an item that is not a header.
+    optionHeader = 4,
 };
 
 struct OptionItem {
