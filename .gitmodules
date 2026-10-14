@@ -7,3 +7,6 @@
 [submodule "mods/unofficial_patch"]
 	path = mods/unofficial_patch
 	url = https://github.com/nagataaaas/wots4-unofficial-patch.git
+[submodule "mods/post_fx"]
+	path = mods/post_fx
+	url = https://github.com/nagataaaas/wots4-post-fx.git

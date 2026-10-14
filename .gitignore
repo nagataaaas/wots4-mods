@@ -6,6 +6,7 @@
 !/mods/debugger
 !/mods/harakiri
 !/mods/unofficial_patch
+!/mods/post_fx
 
 # AI tooling
 AGENTS.md

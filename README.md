@@ -12,6 +12,7 @@ Steam 版『侍道4』（Way of the Samurai 4）向けの ModLoader です。
 | --- | --- |
 | [unofficial_patch](https://github.com/nagataaaas/wots4-unofficial-patch) | クラッシュやバグを直す非公式パッチです。 |
 | [harakiri](https://github.com/nagataaaas/wots4-harakiri) | 難易度「一撃死」を追加します。 |
+| [post_fx](https://github.com/nagataaaas/wots4-post-fx) | アンチエイリアス・シャープ化・モーションブラーを追加します。 |
 | [debugger](https://github.com/nagataaaas/wots4-debugger) | Mod を作るときに使うデバッグツールです。 |
 
 ## インストール

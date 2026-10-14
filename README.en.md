@@ -12,6 +12,7 @@ Place it in the game folder as `dinput8.dll`, and it loads each Mod's `mods/<nam
 | --- | --- |
 | [unofficial_patch](https://github.com/nagataaaas/wots4-unofficial-patch) | Fixes crashes and bugs (an unofficial patch). |
 | [harakiri](https://github.com/nagataaaas/wots4-harakiri) | Adds a "Harakiri" (one-hit death) difficulty. |
+| [post_fx](https://github.com/nagataaaas/wots4-post-fx) | Adds anti-aliasing, sharpening and motion blur. |
 | [debugger](https://github.com/nagataaaas/wots4-debugger) | Provides debugging tools for making Mods. |
 
 ## Installation
