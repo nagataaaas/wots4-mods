@@ -51,8 +51,8 @@ constexpr uint32_t titleListLayout = 0x5c87c0;    // eax = list; places the visi
 constexpr uint32_t titleListMouse = 0x5c7e80;     // edi = list; rebuilds the mouse areas
 
 // Page object: the game's 0xa0 bytes, then ours: the extension, one item pointer
-// per item, then one value per item. They are allocated with the page, so the
-// game frees them with it.
+// per item, one value per item (read writes them), then the value each status item
+// shows. They are allocated with the page, so the game frees them with it.
 constexpr uint32_t pageBaseSize = 0xa0;
 struct PageExtension {
     uint32_t definition;        // Index into hostRegistry.pages
@@ -62,7 +62,7 @@ struct PageExtension {
 };
 
 size_t pageSize(uint32_t itemCount) {
-    return pageBaseSize + sizeof(PageExtension) + itemCount * (sizeof(uint8_t*) + sizeof(uint32_t));
+    return pageBaseSize + sizeof(PageExtension) + itemCount * (sizeof(uint8_t*) + 2 * sizeof(uint32_t));
 }
 
 // Page fields. The page is an InfoArea (base 0x636410), which loads the layouts
@@ -140,7 +140,7 @@ constexpr uint32_t itemToggleState = 0x308;
 // byte. Kind 4 (a row to read, which the input passes over) draws its toggle texts
 // unless this is set (0x645deb); the game's 各種設定 page sets it on such a row.
 constexpr uint32_t itemValueHidden = 0x309;
-constexpr uint32_t readOnlyItemKind = 4;  // Headers and notices
+constexpr uint32_t readOnlyItemKind = 4;  // Headers, notices and statuses
 constexpr uint32_t itemTextChars = 128;
 
 // Parents
@@ -422,6 +422,11 @@ uint32_t* valuesOf(void* page) {
     return reinterpret_cast<uint32_t*>(itemsOf(page) + extensionOf(page).itemCount);
 }
 
+// The choice each status item shows, so that its text is copied only when it changes.
+uint32_t* shownStatusesOf(void* page) {
+    return valuesOf(page) + extensionOf(page).itemCount;
+}
+
 const OptionsPageDefinition& definitionOf(void* page) {
     return hostRegistry.pages[extensionOf(page).definition];
 }
@@ -445,6 +450,14 @@ uint8_t* buildItem(const OptionsItemDefinition& definition) {
         field<uint32_t>(item, itemKind) = readOnlyItemKind;
         item[itemToggleState] = 1;
         item[itemValueHidden] = 1;
+        return item;
+    }
+    // A notice with a label: the shown choice is the "on" text (showStatus).
+    if (definition.kind == optionStatus) {
+        copyItemText(item, itemLabel, definition.label);
+        copyItemText(item, itemOnText, definition.choices[0]);
+        field<uint32_t>(item, itemKind) = readOnlyItemKind;
+        item[itemToggleState] = 1;
         return item;
     }
     copyItemText(item, itemLabel, definition.label);
@@ -526,17 +539,51 @@ void updateNotices(void* page) {
     }
 }
 
+// The page reads its statuses every frame, so the text is copied only when the choice changes.
+void showStatus(void* page, uint32_t item, uint32_t value) {
+    const OptionsItemDefinition& status = definitionOf(page).items[item];
+    const auto choiceCount = static_cast<uint32_t>(status.choices.size());
+    const uint32_t choice = value < choiceCount ? value : 0;
+    uint32_t& shown = shownStatusesOf(page)[item];
+    if (shown == choice) return;
+    copyItemText(itemsOf(page)[item], itemOnText, status.choices[choice]);
+    shown = choice;
+}
+
+uint32_t* readValues(void* page) {
+    const OptionsPageDefinition& definition = definitionOf(page);
+    const uint32_t count = extensionOf(page).itemCount;
+    uint32_t* values = valuesOf(page);
+    memset(values, 0, count * sizeof(uint32_t));
+    definition.callbacks.read(definition.callbacks.context, values, count);
+    return values;
+}
+
+// Every frame while the page is updated. Only the statuses: the other values the Mod
+// gives may differ from what the player has just chosen.
+void refreshStatusItems(void* page) {
+    const PageExtension& extension = extensionOf(page);
+    const OptionsPageDefinition& definition = definitionOf(page);
+    if (!extension.built || !definition.hasStatusItem) return;
+    const uint32_t* values = readValues(page);
+    for (uint32_t i = 0; i < extension.itemCount; ++i) {
+        if (definition.items[i].kind == optionStatus) showStatus(page, i, values[i]);
+    }
+}
+
 void __fastcall refreshItemsMethod(void* page, void*) {
     const PageExtension& extension = extensionOf(page);
     const OptionsPageDefinition& definition = definitionOf(page);
     if (!extension.built) return;
     const uint32_t count = extension.itemCount;
-    uint32_t* values = valuesOf(page);
-    memset(values, 0, count * sizeof(uint32_t));
-    definition.callbacks.read(definition.callbacks.context, values, count);
+    const uint32_t* values = readValues(page);
     for (uint32_t i = 0; i < count; ++i) {
         uint8_t* item = itemsOf(page)[i];
         const OptionsItemDefinition& itemDefinition = definition.items[i];
+        if (itemDefinition.kind == optionStatus) {
+            showStatus(page, i, values[i]);
+            continue;
+        }
         if (isPassedOver(itemDefinition.kind)) continue;
         if (itemDefinition.kind == optionToggle) {
             item[itemToggleState] = values[i] ? 1 : 0;
@@ -760,7 +807,7 @@ void playScrollAnimation(void* page, uint32_t firstBefore) {
 }
 
 // Where the game's input (0x645f90) moves the cursor among all items: one item
-// up or down, one more past a header or a notice, and from the first or last item to no item.
+// up or down, one more past a header, a notice or a status, and from the first or last item to no item.
 int32_t nextCursorItem(void* page, int32_t cursor, bool up) {
     const auto count = static_cast<int32_t>(extensionOf(page).itemCount);
     const int32_t step = up ? -1 : 1;
@@ -804,7 +851,7 @@ void turnRows(void* page, int32_t rows) {
         const int32_t lastItem = static_cast<int32_t>(extension.itemCount) - 1;
         const int32_t moved = cursor + rows;
         cursor = moved < 0 ? 0 : moved > lastItem ? lastItem : moved;
-        // Headers and notices are never next to each other, so the item beside one is neither.
+        // Those rows are never next to each other, so the item beside one is not one of them.
         if (isPassedOverItem(page, cursor)) {
             const int32_t step = rows < 0 ? -1 : 1;
             cursor = cursor + step >= 0 && cursor + step <= lastItem ? cursor + step : cursor - step;
@@ -890,7 +937,13 @@ bool readyToScroll(void* page) {
     return extensionOf(page).built && field<uint8_t>(page, pageLayoutsLoaded);
 }
 
+uint32_t __fastcall modPageUpdateMethod(void* page, void*) {
+    refreshStatusItems(page);
+    return baseUpdate(page);
+}
+
 uint32_t __fastcall scrollingUpdateMethod(void* page, void*) {
+    refreshStatusItems(page);
     if (!readyToScroll(page)) return baseUpdate(page);
     showArrows(page);
     const uint32_t result = baseUpdate(page);
@@ -940,6 +993,7 @@ void prepareModPageMethods() {
     replaceMethod(modPageMethods, refreshItemsSlot, refreshItemsMethod);
     replaceMethod(modPageMethods, pageSpecificSlotB, noPageWork);
     replaceMethod(modPageMethods, itemChangedSlot, itemChangedMethod);
+    replaceMethod(modPageMethods, updateSlot, modPageUpdateMethod);
 
     memcpy(scrollingPageMethods, modPageMethods, sizeof(scrollingPageMethods));
     replaceMethod(scrollingPageMethods, updateSlot, scrollingUpdateMethod);

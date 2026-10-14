@@ -40,9 +40,9 @@ struct OptionsItemDefinition {
     uint32_t noticeValueBits = 0;
 };
 
-// Headers and notices: the game's input passes over these rows (kind 4), one at a time.
+// Headers, notices and statuses: the game's input passes over these rows (kind 4), one at a time.
 inline bool isPassedOver(OptionKind kind) {
-    return kind == optionHeader || kind == optionNotice;
+    return kind == optionHeader || kind == optionNotice || kind == optionStatus;
 }
 
 struct OptionsPageDefinition {
@@ -50,6 +50,7 @@ struct OptionsPageDefinition {
     OptionText title;
     std::vector<OptionsItemDefinition> items;
     OptionsPageCallbacks callbacks;
+    bool hasStatusItem = false;  // The page reads the values every frame while it is shown
 };
 
 struct GameEventHandler {
@@ -136,7 +137,10 @@ inline const char* optionItemProblem(const OptionItem& item) {
     if (item.kind == optionToggle && item.choiceCount != 2) return "a toggle item needs exactly 2 choices";
     if (item.kind == optionChoice && (item.choiceCount < 2 || item.choiceCount > maxOptionChoices))
         return "a choice item needs 2 to 10 choices";
-    if (item.kind != optionToggle && item.kind != optionChoice) return "an item has an unknown kind";
+    if (item.kind == optionStatus && (item.choiceCount < 1 || item.choiceCount > maxOptionChoices))
+        return "a status item needs 1 to 10 choices";
+    if (item.kind != optionToggle && item.kind != optionChoice && item.kind != optionStatus)
+        return "an item has an unknown kind";
     if (!item.choices) return "an item has no choices";
     if (item.defaultValue >= item.choiceCount) return "an item's default value is not one of its choices";
     for (uint32_t i = 0; i < item.choiceCount; ++i) {
@@ -171,10 +175,10 @@ inline const char* optionsPageProblem(const LocalizedText* title, const OptionIt
         const bool passedOver = isPassedOver(items[i].kind);
         // The game's input passes over one such row only; the cursor would stop on a second one.
         if (passedOver && i > 0 && isPassedOver(items[i - 1].kind))
-            return "two header or notice items are next to each other";
+            return "two header, notice or status items are next to each other";
         hasSelectableItem |= !passedOver;
     }
-    if (!hasSelectableItem) return "a page needs an item that is not a header or a notice";
+    if (!hasSelectableItem) return "a page needs an item that is not a header, a notice or a status";
     for (uint32_t i = 0; i < count; ++i) {
         if (items[i].kind != optionNotice) continue;
         if (const char* problem = noticeProblem(items[i], items, count)) return problem;
@@ -215,7 +219,10 @@ inline BOOL WINAPI addOptionsPage(HMODULE owner, const LocalizedText* title, con
     // No exception may cross the C ABI back into the Mod.
     try {
         OptionsPageDefinition page{owner, copyText(*title), {}, *callbacks};
-        for (uint32_t i = 0; i < count; ++i) page.items.push_back(copyOptionItem(items[i]));
+        for (uint32_t i = 0; i < count; ++i) {
+            page.items.push_back(copyOptionItem(items[i]));
+            page.hasStatusItem |= items[i].kind == optionStatus;
+        }
         hostRegistry.pages.push_back(std::move(page));
         for (OptionsPageDefinition& registered : hostRegistry.pages) bindChoicePointers(registered);
     } catch (const std::bad_alloc&) {

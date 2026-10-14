@@ -53,9 +53,15 @@ enum OptionKind : uint32_t {
     // values, and nothing otherwise; the row stays either way. The cursor passes over it.
     // Make it with optionNoticeItem. Its entry in values is not used.
     optionNotice = 5,
+    // A row with a label that shows one of its choices (1 to maxOptionChoices) in the value
+    // column, chosen by the Mod and not by the player, such as a connection state. The cursor
+    // passes over it. While the page is shown, the ModLoader calls read every frame and shows
+    // the choice of the value it writes for this item; the values of the other items are not
+    // used then. A value past the choices shows the first one.
+    optionStatus = 6,
 };
-// The cursor passes over one header or notice only, so two of them are never next to
-// each other. A page needs an item that is neither.
+// The cursor passes over one header, notice or status only, so two of them are never
+// next to each other. A page needs an item that is none of them.
 
 struct OptionItem {
     OptionKind kind;
@@ -80,6 +86,7 @@ inline OptionItem optionNoticeItem(LocalizedText text, uint32_t item, std::initi
 struct OptionsPageCallbacks {
     void* context;
     // The page is about to be shown. Write the current value of every item to values.
+    // On a page with a status item, also every frame while the page is shown: keep it quick.
     void (WINAPI* read)(void* context, uint32_t* values, uint32_t count);
     // The player changed one item.
     void (WINAPI* changed)(void* context, uint32_t item, uint32_t value);

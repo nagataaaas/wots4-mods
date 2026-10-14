@@ -1114,6 +1114,70 @@ void checkNoticePage() {
     reinterpret_cast<void(__thiscall*)(void*)>(virtualMethod(page, resetItemsSlot))(page);
     check("notices: reset reports no change for the notices (every item is at its default)",
         modE.changes == changesBefore);
+    const unsigned readsBefore = modE.reads;
+    const unsigned updatesBefore = baseUpdates;
+    reinterpret_cast<uint32_t(__thiscall*)(void*)>(virtualMethod(page, updateSlot))(page);
+    check("notices: a page without a status runs the base update and reads nothing",
+        modE.reads == readsBefore && baseUpdates == updatesBefore + 1);
+    destroyGameObject(page);
+}
+
+ModState modF{{1, 1, 2}};
+
+uint32_t addStatusPageDefinition() {
+    const LocalizedText onOff[] = {{L"はい", L"Yes"}, {L"いいえ", L"No"}};
+    const LocalizedText states[] = {{L"未確認", L"Unchecked"}, {L"成功", L"Connected"}, {L"失敗", L"Failed"}};
+    const LocalizedText levels[] = {{L"低", L"Low"}, {L"中", L"Mid"}, {L"高", L"High"}};
+    const OptionItem items[] = {
+        {optionToggle, {L"接続", L"Connect"}, onOff, 2},
+        {optionStatus, {L"接続状態", L"Connection"}, states, 3},
+        {optionChoice, {L"段階", L"Level"}, levels, 3},
+    };
+    const OptionsPageCallbacks callbacks{&modF, readValues, valueChanged};
+    const LocalizedText title{L"ページF", L"Page F"};
+    hostRegistry.registrationOpen = true;
+    const BOOL added = addOptionsPage(reinterpret_cast<HMODULE>(0x10000), &title, items, 3, &callbacks);
+    hostRegistry.registrationOpen = false;
+    hostRegistry.textsResolved = false;
+    resolveTexts();
+    return added ? static_cast<uint32_t>(hostRegistry.pages.size() - 1) : UINT32_MAX;
+}
+
+void checkStatusPage() {
+    const uint32_t definition = addStatusPageDefinition();
+    check("statuses: a page with a status is registered", definition != UINT32_MAX);
+    if (definition == UINT32_MAX) return;
+    void* page = createModPage(definition);
+    if (!page) {
+        check("statuses: the page is created", false);
+        return;
+    }
+    reinterpret_cast<void(__thiscall*)(void*)>(virtualMethod(page, initializeSlot))(page);
+    uint8_t* status = itemsOf(page)[1];
+    check("statuses: a status is a kind 4 item with its label and the read choice as the shown toggle text",
+        field<uint32_t>(status, itemKind) == 4 && wcscmp(itemText(status, itemLabel), L"Connection") == 0 &&
+        wcscmp(itemText(status, itemOnText), L"Connected") == 0 && status[itemToggleState] == 1 &&
+        status[itemValueHidden] == 0);
+
+    const auto update = reinterpret_cast<uint32_t(__thiscall*)(void*)>(virtualMethod(page, updateSlot));
+    const unsigned readsBefore = modF.reads;
+    const unsigned updatesBefore = baseUpdates;
+    modF.values[1] = 2;
+    itemsOf(page)[0][itemToggleState] = 0;  // The player's choice, not yet given to the Mod
+    update(page);
+    check("statuses: each update reads and shows the new choice, then runs the base update",
+        modF.reads == readsBefore + 1 && baseUpdates == updatesBefore + 1 &&
+        wcscmp(itemText(status, itemOnText), L"Failed") == 0);
+    check("statuses: an update leaves the other items as the player set them",
+        itemsOf(page)[0][itemToggleState] == 0 && field<uint32_t>(itemsOf(page)[2], itemChoiceIndex) == 2);
+    modF.values[1] = 7;
+    update(page);
+    check("statuses: a value past the choices shows the first", wcscmp(itemText(status, itemOnText), L"Unchecked") == 0);
+
+    const unsigned changesBefore = modF.changes;
+    reinterpret_cast<void(__thiscall*)(void*)>(virtualMethod(page, resetItemsSlot))(page);
+    check("statuses: reset reports the choice item only, not the status", modF.changes == changesBefore + 1 &&
+        modF.lastItem == 2 && modF.lastValue == 0);
     destroyGameObject(page);
 }
 
@@ -1158,6 +1222,7 @@ int main() {
     checkScrollingPage();
     checkHeaderPage();
     checkNoticePage();
+    checkStatusPage();
     checkJapaneseTexts();
     check("every object the hooks allocated was released", objectsAllocated == objectsReleased);
 

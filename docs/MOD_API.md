@@ -95,6 +95,7 @@ A page shows 8 items at once (`wots4::optionsItemsPerScreen`). A page with more 
 | Items per page                  | 1 or more                                |
 | Choices of a choice item        | 2 to 10 (`wots4::maxOptionChoices`)      |
 | Title                           | Up to 63 characters                      |
+| Choices of a status item        | 1 to 10                                  |
 | Item label, each choice, notice | Up to 127 characters                     |
 | Header label                    | Up to 125 characters                     |
 
@@ -106,14 +107,17 @@ Item kinds (`wots4::OptionItem`):
 | `wots4::optionChoice`  | 2 to 10; the player moves left and right through them      | The index of the choice     |
 | `wots4::optionHeader`  | None (`nullptr`, 0)                                        | Not used                    |
 | `wots4::optionNotice`  | Made with `wots4::optionNoticeItem` (below)                | Not used                    |
+| `wots4::optionStatus`  | 1 to 10; the Mod chooses the one shown (below)             | The index of the shown choice |
 
-`defaultValue` is the value of the item that the page's 初期設定に戻す button sets, in the same form as the values above. It must be one of the item's values, and 0 for a header.
+`defaultValue` is the value of the item that the page's 初期設定に戻す button sets, in the same form as the values above. It must be one of the item's values, and 0 for a header. The button leaves status items as they are.
 
 A header groups the items below it. It shows only its label in brackets, `【地図】` in the Japanese menus and `[Map]` in the English ones, in the same place and style as the other labels.
 
 A notice shows a text in the value column of a row without a label while another item of the page has one of some values, like the game's notice under 言語. `wots4::optionNoticeItem(text, item, {values...})` makes one: it shows `text` (up to 127 characters) while item number `item`, a toggle or a choice item, has one of `values`. The row stays when the text is hidden. The ModLoader decides when the page is shown and each time the player changes an item, from the values the page shows.
 
-Headers and notices still count as items: `values` has an entry for each, which the ModLoader does not use, and the numbers of the items after them include them. The cursor and the pointer pass over them, but the game's input passes over one only, so two of them next to each other are refused, and so is a page of them only. A ModLoader that does not know a kind refuses the page as having an unknown kind.
+A status shows something the Mod knows and the player does not choose, such as a connection state, as a row with a label and one of its choices in the value column. The value the Mod writes for it in `read` chooses the shown choice; a value outside the choices shows the first one. While a page with a status is shown, the ModLoader calls `read` every frame and updates only the statuses from it, so the other items keep what the player chose. Keep `read` quick on such a page: no file I/O, memory allocation or locks. A status of 1 choice shows a fixed text, such as a server address known when the Mod initializes.
+
+Headers, notices and statuses still count as items: `values` has an entry for each (the ModLoader uses only the statuses'), and the numbers of the items after them include them. The cursor and the pointer pass over them, but the game's input passes over one only, so two of them next to each other are refused, and so is a page of them only. A notice cannot watch a header, a notice or a status. A ModLoader that does not know a kind refuses the page as having an unknown kind; a Mod that wants to run with a ModLoader that does not know `optionStatus` can add its page again without its statuses when `addOptionsPage` refuses it.
 
 Every text (title, label, choice) is a `wots4::LocalizedText` with a Japanese and an English text, both required. When a menu is first built, the ModLoader shows the Japanese text if the game's menus are in Japanese, and the English text otherwise (the game has no other menu languages; a language changed in the game takes effect after a restart, as in the game).
 

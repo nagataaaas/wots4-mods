@@ -138,6 +138,32 @@ void checkPageLimits() {
     const OptionItem withNoticeChoices[] = {toggle, noticeWithChoices};
     check("a notice with choices refused", !addPage(mod, L"NC", withNoticeChoices, 2, &callbacks));
 
+    const LocalizedText states[] = {inBoth(L"Unchecked"), inBoth(L"Connected"), inBoth(L"Failed")};
+    const OptionItem status{optionStatus, inBoth(L"State"), states, 3};
+    const OptionItem withStatus[] = {toggle, status, level};
+    check("a status between other items accepted", addPage(mod, L"S", withStatus, 3, &callbacks) &&
+        hostRegistry.pages.back().hasStatusItem && hostRegistry.pages.back().items[1].kind == optionStatus &&
+        hostRegistry.pages.back().items[1].choices.size() == 3);
+    check("a page without a status reads only when shown", !hostRegistry.pages.front().hasStatusItem);
+    const OptionItem oneChoiceStatus{optionStatus, inBoth(L"Server"), states, 1};
+    const OptionItem withOneChoice[] = {oneChoiceStatus, toggle};
+    check("a status of 1 choice accepted", addPage(mod, L"S1", withOneChoice, 2, &callbacks));
+    const OptionItem noChoiceStatus{optionStatus, inBoth(L"State"), states, 0};
+    const OptionItem withNoChoice[] = {noChoiceStatus, toggle};
+    check("a status of no choice refused", !addPage(mod, L"S0", withNoChoice, 2, &callbacks));
+    const OptionItem elevenChoiceStatus{optionStatus, inBoth(L"State"), states, 11};
+    const OptionItem withElevenChoices[] = {elevenChoiceStatus, toggle};
+    check("a status of 11 choices refused", !addPage(mod, L"S11", withElevenChoices, 2, &callbacks));
+    const OptionItem statusDefaultPast{optionStatus, inBoth(L"State"), states, 3, 3};
+    const OptionItem withDefaultPast[] = {statusDefaultPast, toggle};
+    check("a status default past its choices refused", !addPage(mod, L"SD", withDefaultPast, 2, &callbacks));
+    const OptionItem statusAfterHeader[] = {toggle, header, status, level};
+    check("a status next to a header refused", !addPage(mod, L"SH", statusAfterHeader, 4, &callbacks));
+    const OptionItem statusesOnly[] = {status};
+    check("a page of a status only refused", !addPage(mod, L"SO", statusesOnly, 1, &callbacks));
+    const OptionItem watchesStatus[] = {status, toggle, optionNoticeItem(inBoth(L"Restart"), 0, {0}), level};
+    check("a notice watching a status refused", !addPage(mod, L"SW", watchesStatus, 4, &callbacks));
+
     std::wstring longHeader(126, L'h');
     const OptionItem tooLongHeader{optionHeader, inBoth(longHeader.c_str())};
     const OptionItem withTooLong[] = {tooLongHeader, toggle};
