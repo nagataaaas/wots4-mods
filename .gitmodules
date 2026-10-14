@@ -1,0 +1,9 @@
+[submodule "mods/debugger"]
+	path = mods/debugger
+	url = https://github.com/nagataaaas/wots4-debugger.git
+[submodule "mods/harakiri"]
+	path = mods/harakiri
+	url = https://github.com/nagataaaas/wots4-harakiri.git
+[submodule "mods/unofficial_patch"]
+	path = mods/unofficial_patch
+	url = https://github.com/nagataaaas/wots4-unofficial-patch.git

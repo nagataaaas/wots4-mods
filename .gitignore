@@ -1,8 +1,11 @@
 # Do not commit analysis material (analysis tools, analyzed information, exe, etc.)
 /research/
 
-# Each Mod lives in its own repository. They are placed here only to build them together locally
-/mods/
+# Each Mod lives in its own repository. Published Mods are submodules; others are placed here only to build them together locally
+/mods/*
+!/mods/debugger
+!/mods/harakiri
+!/mods/unofficial_patch
 
 # AI tooling
 AGENTS.md
