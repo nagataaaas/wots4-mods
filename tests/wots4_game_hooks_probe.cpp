@@ -1054,6 +1054,69 @@ void checkHeaderPage() {
     destroyGameObject(page);
 }
 
+// ---------------------------------------------------------------- notices
+
+// Toggle, choice, notice (choice is Low or High), toggle, notice (first toggle on).
+ModState modE{{1, 2}};
+
+uint32_t addNoticePageDefinition() {
+    const LocalizedText onOff[] = {{L"はい", L"Yes"}, {L"いいえ", L"No"}};
+    const LocalizedText levels[] = {{L"低", L"Low"}, {L"中", L"Mid"}, {L"高", L"High"}};
+    const OptionItem items[] = {
+        {optionToggle, {L"表示", L"Show"}, onOff, 2},
+        {optionChoice, {L"段階", L"Level"}, levels, 3},
+        optionNoticeItem({L"再起動で有効", L"After a restart"}, 1, {0, 2}),
+        {optionToggle, {L"音", L"Sound"}, onOff, 2},
+        optionNoticeItem({L"表示中", L"Shown"}, 0, {1}),
+    };
+    const OptionsPageCallbacks callbacks{&modE, readValues, valueChanged};
+    const LocalizedText title{L"ページE", L"Page E"};
+    hostRegistry.registrationOpen = true;
+    const BOOL added = addOptionsPage(reinterpret_cast<HMODULE>(0x10000), &title, items, 5, &callbacks);
+    hostRegistry.registrationOpen = false;
+    hostRegistry.textsResolved = false;
+    resolveTexts();
+    return added ? static_cast<uint32_t>(hostRegistry.pages.size() - 1) : UINT32_MAX;
+}
+
+bool noticeShown(void* page, uint32_t item) {
+    return itemsOf(page)[item][itemValueHidden] == 0;
+}
+
+void checkNoticePage() {
+    const uint32_t definition = addNoticePageDefinition();
+    check("notices: a page with notices is registered", definition != UINT32_MAX);
+    if (definition == UINT32_MAX) return;
+    void* page = createModPage(definition);
+    check("notices: a page of 5 items does not scroll", page && field<uintptr_t*>(page, 0) == modPageMethods);
+    if (!page) return;
+    reinterpret_cast<void(__thiscall*)(void*)>(virtualMethod(page, initializeSlot))(page);
+    uint8_t* notice = itemsOf(page)[2];
+    check("notices: a notice is a kind 4 item without a label, its text as the shown toggle text",
+        field<uint32_t>(notice, itemKind) == 4 && itemText(notice, itemLabel)[0] == 0 &&
+        wcscmp(itemText(notice, itemOnText), L"After a restart") == 0 && notice[itemToggleState] == 1);
+    check("notices: after read, both notices show (Level is High, Show is on)",
+        noticeShown(page, 2) && noticeShown(page, 4));
+
+    const auto changed = reinterpret_cast<uint32_t(__thiscall*)(void*, void*)>(virtualMethod(page, itemChangedSlot));
+    field<uint32_t>(itemsOf(page)[1], itemChoiceIndex) = 1;
+    changed(page, itemsOf(page)[1]);
+    check("notices: Level set to Mid hides its notice and leaves the other",
+        modE.lastItem == 1 && modE.lastValue == 1 && !noticeShown(page, 2) && noticeShown(page, 4));
+    itemsOf(page)[0][itemToggleState] = 0;
+    changed(page, itemsOf(page)[0]);
+    check("notices: Show set to off hides its notice", !noticeShown(page, 4));
+    field<uint32_t>(itemsOf(page)[1], itemChoiceIndex) = 0;
+    changed(page, itemsOf(page)[1]);
+    check("notices: Level set to Low shows its notice again", noticeShown(page, 2));
+
+    const unsigned changesBefore = modE.changes;
+    reinterpret_cast<void(__thiscall*)(void*)>(virtualMethod(page, resetItemsSlot))(page);
+    check("notices: reset reports no change for the notices (every item is at its default)",
+        modE.changes == changesBefore);
+    destroyGameObject(page);
+}
+
 }  // namespace
 
 // The texts are resolved once per process; this resolves them again, after every other check.
@@ -1065,8 +1128,11 @@ void checkJapaneseTexts() {
         hostRegistry.pages[0].title.text == L"ページA" && hostRegistry.pages[0].items[0].label.text == L"接続" &&
         hostRegistry.pages[1].items[1].choicePointers[2] == hostRegistry.pages[1].items[1].choices[2].text.c_str() &&
         wcscmp(hostRegistry.pages[1].items[1].choicePointers[2], L"高") == 0);
+    const OptionsPageDefinition* grouped = nullptr;
+    for (const OptionsPageDefinition& page : hostRegistry.pages)
+        if (page.title.english.string == L"Page D") grouped = &page;
     check("Japanese game: a header is in full-width brackets",
-        hostRegistry.pages.back().items[0].label.text == L"【見出し】");
+        grouped && grouped->items[0].label.text == L"【見出し】");
 }
 
 int main() {
@@ -1091,6 +1157,7 @@ int main() {
     checkGameEvents();
     checkScrollingPage();
     checkHeaderPage();
+    checkNoticePage();
     checkJapaneseTexts();
     check("every object the hooks allocated was released", objectsAllocated == objectsReleased);
 

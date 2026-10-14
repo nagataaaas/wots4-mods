@@ -35,7 +35,15 @@ struct OptionsItemDefinition {
     OptionText label;
     std::vector<OptionText> choices;
     std::vector<const wchar_t*> choicePointers;  // Into choices; the game keeps these pointers
+    // Notices: the item whose value decides, and bit v set when value v shows the notice.
+    uint32_t watchedItem = 0;
+    uint32_t noticeValueBits = 0;
 };
+
+// Headers and notices: the game's input passes over these rows (kind 4), one at a time.
+inline bool isPassedOver(OptionKind kind) {
+    return kind == optionHeader || kind == optionNotice;
+}
 
 struct OptionsPageDefinition {
     HMODULE owner;
@@ -119,6 +127,12 @@ inline const char* optionItemProblem(const OptionItem& item) {
         if (item.choiceCount != 0 || item.defaultValue != 0) return "a header item has choices or a default value";
         return nullptr;
     }
+    // The page checks the watched item (noticeProblem).
+    if (item.kind == optionNotice) {
+        if (item.choices) return "a notice item has choices";
+        if (item.choiceCount == 0) return "a notice item shows for no value";
+        return nullptr;
+    }
     if (item.kind == optionToggle && item.choiceCount != 2) return "a toggle item needs exactly 2 choices";
     if (item.kind == optionChoice && (item.choiceCount < 2 || item.choiceCount > maxOptionChoices))
         return "a choice item needs 2 to 10 choices";
@@ -129,6 +143,16 @@ inline const char* optionItemProblem(const OptionItem& item) {
         if (!isValidText(item.choices[i], maxOptionTextChars))
             return "a choice is missing in a language, empty, or longer than 127 characters";
     }
+    return nullptr;
+}
+
+// nullptr if the notice watches a toggle or choice item of the page and shows for its values only.
+// Expects every item of the page to be valid.
+inline const char* noticeProblem(const OptionItem& notice, const OptionItem* items, uint32_t count) {
+    const uint32_t watched = notice.defaultValue;
+    if (watched >= count || isPassedOver(items[watched].kind))
+        return "a notice item watches no toggle or choice item of the page";
+    if (notice.choiceCount >> items[watched].choiceCount) return "a notice item shows for a value past the choices";
     return nullptr;
 }
 
@@ -144,16 +168,27 @@ inline const char* optionsPageProblem(const LocalizedText* title, const OptionIt
     bool hasSelectableItem = false;
     for (uint32_t i = 0; i < count; ++i) {
         if (const char* problem = optionItemProblem(items[i])) return problem;
-        const bool header = items[i].kind == optionHeader;
-        // The game's input passes over one header only; the cursor would stop on a second one.
-        if (header && i > 0 && items[i - 1].kind == optionHeader) return "two header items are next to each other";
-        hasSelectableItem |= !header;
+        const bool passedOver = isPassedOver(items[i].kind);
+        // The game's input passes over one such row only; the cursor would stop on a second one.
+        if (passedOver && i > 0 && isPassedOver(items[i - 1].kind))
+            return "two header or notice items are next to each other";
+        hasSelectableItem |= !passedOver;
     }
-    if (!hasSelectableItem) return "a page needs an item that is not a header";
+    if (!hasSelectableItem) return "a page needs an item that is not a header or a notice";
+    for (uint32_t i = 0; i < count; ++i) {
+        if (items[i].kind != optionNotice) continue;
+        if (const char* problem = noticeProblem(items[i], items, count)) return problem;
+    }
     return nullptr;
 }
 
 inline OptionsItemDefinition copyOptionItem(const OptionItem& item) {
+    if (item.kind == optionNotice) {
+        OptionsItemDefinition notice{item.kind, 0, copyText(item.label), {}, {}};
+        notice.watchedItem = item.defaultValue;
+        notice.noticeValueBits = item.choiceCount;
+        return notice;
+    }
     OptionsItemDefinition copy{item.kind, item.defaultValue, copyText(item.label), {}, {}};
     for (uint32_t i = 0; i < item.choiceCount; ++i) copy.choices.push_back(copyText(item.choices[i]));
     return copy;

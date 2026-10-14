@@ -140,6 +140,7 @@ constexpr uint32_t itemToggleState = 0x308;
 // byte. Kind 4 (a row to read, which the input passes over) draws its toggle texts
 // unless this is set (0x645deb); the game's 各種設定 page sets it on such a row.
 constexpr uint32_t itemValueHidden = 0x309;
+constexpr uint32_t readOnlyItemKind = 4;  // Headers and notices
 constexpr uint32_t itemTextChars = 128;
 
 // Parents
@@ -429,14 +430,24 @@ uint8_t* buildItem(const OptionsItemDefinition& definition) {
     auto item = static_cast<uint8_t*>(allocateGameObject(itemSize));
     if (!item) return nullptr;
     initializeItem(item);
-    copyItemText(item, itemLabel, definition.label);
-    // The game draws a header without the cursor's highlight, and its input and
-    // pointer pass over it (0x645b0a, 0x646199, 0x64611e).
+    // The game draws a row of kind 4 without the cursor's highlight, and its input
+    // and pointer pass over it (0x645b0a, 0x646199, 0x64611e).
     if (definition.kind == optionHeader) {
-        field<uint32_t>(item, itemKind) = optionHeader;
+        copyItemText(item, itemLabel, definition.label);
+        field<uint32_t>(item, itemKind) = readOnlyItemKind;
         item[itemValueHidden] = 1;
         return item;
     }
+    // Like the game's language notice: no label, the text as the "on" text of a toggle
+    // that is on, shown while itemValueHidden is clear (updateNotices).
+    if (definition.kind == optionNotice) {
+        copyItemText(item, itemOnText, definition.label);
+        field<uint32_t>(item, itemKind) = readOnlyItemKind;
+        item[itemToggleState] = 1;
+        item[itemValueHidden] = 1;
+        return item;
+    }
+    copyItemText(item, itemLabel, definition.label);
     if (definition.kind == optionToggle) {
         copyItemText(item, itemOnText, definition.choices[0]);
         copyItemText(item, itemOffText, definition.choices[1]);
@@ -493,6 +504,28 @@ void __fastcall buildItemsMethod(void* page, void*) {
 
 void __fastcall noPageWork(void*, void*) {}
 
+// The value the item shows, as read and changed take it.
+uint32_t shownValue(uint8_t* item, OptionKind kind) {
+    if (kind == optionToggle) return item[itemToggleState];
+    return field<uint32_t>(item, itemChoiceIndex);
+}
+
+// Shows each notice whose watched item shows one of its values, from the values the
+// items show. Runs only when they change, so it may loop over the page.
+void updateNotices(void* page) {
+    const PageExtension& extension = extensionOf(page);
+    const OptionsPageDefinition& definition = definitionOf(page);
+    uint8_t* const* items = itemsOf(page);
+    for (uint32_t i = 0; i < extension.itemCount; ++i) {
+        const OptionsItemDefinition& notice = definition.items[i];
+        if (notice.kind != optionNotice) continue;
+        const uint32_t watched = notice.watchedItem;
+        const uint32_t value = shownValue(items[watched], definition.items[watched].kind);
+        const bool shown = value < maxOptionChoices && (notice.noticeValueBits >> value & 1);
+        items[i][itemValueHidden] = shown ? 0 : 1;
+    }
+}
+
 void __fastcall refreshItemsMethod(void* page, void*) {
     const PageExtension& extension = extensionOf(page);
     const OptionsPageDefinition& definition = definitionOf(page);
@@ -504,7 +537,7 @@ void __fastcall refreshItemsMethod(void* page, void*) {
     for (uint32_t i = 0; i < count; ++i) {
         uint8_t* item = itemsOf(page)[i];
         const OptionsItemDefinition& itemDefinition = definition.items[i];
-        if (itemDefinition.kind == optionHeader) continue;
+        if (isPassedOver(itemDefinition.kind)) continue;
         if (itemDefinition.kind == optionToggle) {
             item[itemToggleState] = values[i] ? 1 : 0;
             continue;
@@ -512,12 +545,7 @@ void __fastcall refreshItemsMethod(void* page, void*) {
         const auto choiceCount = static_cast<uint32_t>(itemDefinition.choices.size());
         field<uint32_t>(item, itemChoiceIndex) = values[i] < choiceCount ? values[i] : 0;
     }
-}
-
-// The value the item shows, as read and changed take it.
-uint32_t shownValue(uint8_t* item, OptionKind kind) {
-    if (kind == optionToggle) return item[itemToggleState];
-    return field<uint32_t>(item, itemChoiceIndex);
+    updateNotices(page);
 }
 
 uint32_t __fastcall itemChangedMethod(void* page, void*, void* item) {
@@ -527,6 +555,7 @@ uint32_t __fastcall itemChangedMethod(void* page, void*, void* item) {
     for (uint32_t i = 0; i < extension.itemCount; ++i) {
         if (items[i] != item) continue;
         definition.callbacks.changed(definition.callbacks.context, i, shownValue(items[i], definition.items[i].kind));
+        updateNotices(page);
         return 1;
     }
     return 0;
@@ -542,7 +571,7 @@ void __fastcall resetItemsMethod(void* page, void*) {
     uint8_t* const* items = itemsOf(page);
     for (uint32_t i = 0; i < extension.itemCount; ++i) {
         const OptionsItemDefinition& item = definition.items[i];
-        if (item.kind == optionHeader || shownValue(items[i], item.kind) == item.defaultValue) continue;
+        if (isPassedOver(item.kind) || shownValue(items[i], item.kind) == item.defaultValue) continue;
         definition.callbacks.changed(definition.callbacks.context, i, item.defaultValue);
     }
 }
@@ -706,8 +735,8 @@ bool hasItemsBelow(const PageExtension& extension) {
     return extension.firstVisibleItem < lastFirstVisibleItem(extension);
 }
 
-bool isHeader(void* page, int32_t item) {
-    return definitionOf(page).items[item].kind == optionHeader;
+bool isPassedOverItem(void* page, int32_t item) {
+    return isPassedOver(definitionOf(page).items[item].kind);
 }
 
 // Moves the rows as little as needed to show item (noCursor shows nothing).
@@ -731,12 +760,12 @@ void playScrollAnimation(void* page, uint32_t firstBefore) {
 }
 
 // Where the game's input (0x645f90) moves the cursor among all items: one item
-// up or down, one more past a header, and from the first or last item to no item.
+// up or down, one more past a header or a notice, and from the first or last item to no item.
 int32_t nextCursorItem(void* page, int32_t cursor, bool up) {
     const auto count = static_cast<int32_t>(extensionOf(page).itemCount);
     const int32_t step = up ? -1 : 1;
     int32_t next = cursor + step;
-    if (next >= 0 && next < count && isHeader(page, next)) next += step;
+    if (next >= 0 && next < count && isPassedOverItem(page, next)) next += step;
     return next >= 0 && next < count ? next : noCursor;
 }
 
@@ -775,8 +804,8 @@ void turnRows(void* page, int32_t rows) {
         const int32_t lastItem = static_cast<int32_t>(extension.itemCount) - 1;
         const int32_t moved = cursor + rows;
         cursor = moved < 0 ? 0 : moved > lastItem ? lastItem : moved;
-        // Headers are never next to each other, so the item beside one is not a header.
-        if (isHeader(page, cursor)) {
+        // Headers and notices are never next to each other, so the item beside one is neither.
+        if (isPassedOverItem(page, cursor)) {
             const int32_t step = rows < 0 ? -1 : 1;
             cursor = cursor + step >= 0 && cursor + step <= lastItem ? cursor + step : cursor - step;
         }

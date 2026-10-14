@@ -116,6 +116,28 @@ void checkPageLimits() {
     const OptionItem headerWithoutLabel{optionHeader, {L"見出し", nullptr}};
     const OptionItem withoutLabel[] = {headerWithoutLabel, toggle};
     check("a header without the English label refused", !addPage(mod, L"HL", withoutLabel, 2, &callbacks));
+    const OptionItem notice = optionNoticeItem(inBoth(L"Restart"), 1, {0, 2});
+    const OptionItem noticed[] = {toggle, level, notice, toggle, header, toggle};
+    check("a notice under the item it watches accepted", addPage(mod, L"N", noticed, 6, &callbacks) &&
+        hostRegistry.pages.back().items[2].watchedItem == 1 && hostRegistry.pages.back().items[2].noticeValueBits == 0b101 &&
+        hostRegistry.pages.back().items[2].choices.empty() && hostRegistry.pages.back().items[2].label.english.string == L"Restart");
+    const OptionItem noticeAfterHeader[] = {toggle, header, notice, level};
+    check("a notice next to a header refused", !addPage(mod, L"NH", noticeAfterHeader, 4, &callbacks));
+    const OptionItem watchesHeader[] = {header, toggle, optionNoticeItem(inBoth(L"Restart"), 0, {0}), level};
+    check("a notice watching a header refused", !addPage(mod, L"NW", watchesHeader, 4, &callbacks));
+    const OptionItem watchesPastPage[] = {toggle, optionNoticeItem(inBoth(L"Restart"), 2, {0})};
+    check("a notice watching past the page refused", !addPage(mod, L"NP", watchesPastPage, 2, &callbacks));
+    const OptionItem pastToggle[] = {toggle, optionNoticeItem(inBoth(L"Restart"), 0, {2})};
+    check("a notice for a value past a toggle's 2 refused", !addPage(mod, L"NV", pastToggle, 2, &callbacks));
+    const OptionItem pastTen[] = {level, optionNoticeItem(inBoth(L"Restart"), 0, {10})};
+    check("a notice for value 10 refused", !addPage(mod, L"N10", pastTen, 2, &callbacks));
+    const OptionItem noValues[] = {toggle, optionNoticeItem(inBoth(L"Restart"), 0, {})};
+    check("a notice for no value refused", !addPage(mod, L"N0", noValues, 2, &callbacks));
+    OptionItem noticeWithChoices = optionNoticeItem(inBoth(L"Restart"), 0, {1});
+    noticeWithChoices.choices = onOff;
+    const OptionItem withNoticeChoices[] = {toggle, noticeWithChoices};
+    check("a notice with choices refused", !addPage(mod, L"NC", withNoticeChoices, 2, &callbacks));
+
     std::wstring longHeader(126, L'h');
     const OptionItem tooLongHeader{optionHeader, inBoth(longHeader.c_str())};
     const OptionItem withTooLong[] = {tooLongHeader, toggle};

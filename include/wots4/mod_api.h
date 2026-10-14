@@ -5,6 +5,7 @@
 // Host and modules live to process exit. No STL crosses this ABI.
 #include <windows.h>
 #include <cstdint>
+#include <initializer_list>
 
 namespace wots4 {
 
@@ -47,9 +48,14 @@ enum OptionKind : uint32_t {
     // menus) or [label] (English menus), so up to maxOptionTextChars - 2 characters.
     // The cursor passes over it.
     // No choices (nullptr, 0) and defaultValue 0; its entry in values is not used.
-    // Not first after another header, and a page needs an item that is not a header.
     optionHeader = 4,
+    // A row that shows a text in the value column while another item has one of some
+    // values, and nothing otherwise; the row stays either way. The cursor passes over it.
+    // Make it with optionNoticeItem. Its entry in values is not used.
+    optionNotice = 5,
 };
+// The cursor passes over one header or notice only, so two of them are never next to
+// each other. A page needs an item that is neither.
 
 struct OptionItem {
     OptionKind kind;
@@ -58,6 +64,17 @@ struct OptionItem {
     uint32_t choiceCount;
     uint32_t defaultValue;  // The value the page's 初期設定に戻す button sets, like the values of read
 };
+
+// A notice that shows text while item number item (a toggle or a choice item of the same
+// page) has one of values. The fields hold: label = text (up to maxOptionTextChars),
+// choices = nullptr, choiceCount = bit v set for each value v, defaultValue = item.
+// A value past the item's choices makes addOptionsPage refuse the page.
+inline OptionItem optionNoticeItem(LocalizedText text, uint32_t item, std::initializer_list<uint32_t> values) {
+    constexpr uint32_t outsideChoices = 1u << 31;
+    uint32_t valueBits = 0;
+    for (uint32_t value : values) valueBits |= value < maxOptionChoices ? 1u << value : outsideChoices;
+    return {optionNotice, text, nullptr, valueBits, item};
+}
 
 // Called on the game thread. values has one entry per item, in the order of addOptionsPage.
 struct OptionsPageCallbacks {
