@@ -32,6 +32,28 @@ function(_wots4_set_runtime_output_directory target directory)
     endforeach()
 endfunction()
 
+# Release tag written into the VERSIONINFO of the ModLoader and the installer. The Release workflow passes the tag.
+set(WOTS4_VERSION "dev" CACHE STRING "Release tag (vYYYY.MM.DD or vYYYY.MM.DD.N), or dev for local builds")
+
+# Writes wots4_version.h (the version and the ModLoader's product name) and sets WOTS4_VERSION_INCLUDE_DIR.
+# The installer reads ProductName to tell this ModLoader from other dinput8.dll files.
+function(wots4_generate_version_header)
+    set(directory ${CMAKE_BINARY_DIR}/wots4_generated)
+    set(WOTS4_VERSION_INCLUDE_DIR ${directory} CACHE INTERNAL "")
+    # FILEVERSION needs four numbers: v2026.10.14 -> 2026,10,14,1 and v2026.10.14.2 -> 2026,10,14,2
+    set(WOTS4_VERSION_NUMBERS 0,0,0,0)
+    if(WOTS4_VERSION MATCHES "^v([0-9]+)\\.([0-9]+)\\.([0-9]+)(\\.([0-9]+))?$")
+        set(release_of_day 1)
+        if(CMAKE_MATCH_5)
+            set(release_of_day ${CMAKE_MATCH_5})
+        endif()
+        set(WOTS4_VERSION_NUMBERS ${CMAKE_MATCH_1},${CMAKE_MATCH_2},${CMAKE_MATCH_3},${release_of_day})
+    elseif(NOT WOTS4_VERSION STREQUAL "dev")
+        message(FATAL_ERROR "WOTS4_VERSION must be vYYYY.MM.DD, vYYYY.MM.DD.N or dev (got ${WOTS4_VERSION})")
+    endif()
+    configure_file(${WOTS4_ROOT}/cmake/wots4_version.h.in ${directory}/wots4_version.h @ONLY)
+endfunction()
+
 # Build the ModLoader (dinput8.dll). Also usable for tests through the ModLoader when building a Mod standalone.
 #   wots4_add_loader([INSTALL])  INSTALL puts it in the Release zip (ModLoader repository only)
 function(wots4_add_loader)
@@ -40,8 +62,10 @@ function(wots4_add_loader)
         return()
     endif()
     wots4_use_minhook()
+    wots4_generate_version_header()
     add_library(wots4_loader SHARED ${WOTS4_ROOT}/src/dinput8_proxy.cpp ${WOTS4_ROOT}/src/dinput8_proxy.def
-        ${WOTS4_ROOT}/src/wots4_game_hooks.cpp)
+        ${WOTS4_ROOT}/src/wots4_game_hooks.cpp ${WOTS4_ROOT}/src/dinput8_proxy.rc)
+    target_include_directories(wots4_loader PRIVATE ${WOTS4_VERSION_INCLUDE_DIR})
     target_link_libraries(wots4_loader PRIVATE wots4::sdk wots4_minhook)
     set_target_properties(wots4_loader PROPERTIES OUTPUT_NAME dinput8)
     _wots4_set_runtime_output_directory(wots4_loader ${CMAKE_BINARY_DIR}/game)
