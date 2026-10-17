@@ -15,7 +15,7 @@ Place it in the game folder as `dinput8.dll`, and it loads each Mod's `mods/<nam
 | [post_fx](https://github.com/nagataaaas/wots4-post-fx) | Adds anti-aliasing, sharpening and motion blur. |
 | [tweaks](https://github.com/nagataaaas/wots4-tweaks) | Small "nice to have" tweaks, each switched on or off in the options. |
 | [fps_uncap](https://github.com/nagataaaas/wots4-fps-uncap) | Removes the 30 FPS cap so the game runs at 60, 90 or 120 FPS. |
-| [autosave](https://github.com/nagataaaas/wots4-autosave) | Automatically saves the state that Retry after death returns to, and lets you continue from it on the Load screen. |
+| [autosave](https://github.com/nagataaaas/wots4-autosave) | Adds an autosave and lets you continue from it on the Load screen. |
 | [better_save_name](https://github.com/nagataaaas/wots4-better-save-name) | Shows each save's day, time of day, route and latest event in the save lists instead of its file name. |
 | [debugger](https://github.com/nagataaaas/wots4-debugger) | Provides debugging tools for making Mods. |
 
