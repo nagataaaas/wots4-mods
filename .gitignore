@@ -9,6 +9,7 @@
 !/mods/post_fx
 !/mods/tweaks
 !/mods/fps_uncap
+!/mods/autosave
 
 # AI tooling
 AGENTS.md

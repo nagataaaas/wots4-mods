@@ -15,6 +15,7 @@ Steam 版『侍道4』（Way of the Samurai 4）向けの ModLoader です。
 | [post_fx](https://github.com/nagataaaas/wots4-post-fx) | アンチエイリアス・シャープ化・モーションブラーを追加します。 |
 | [tweaks](https://github.com/nagataaaas/wots4-tweaks) | 「あったらいいな」な小さな調整を、オプションで一つずつ切り替えられます。 |
 | [fps_uncap](https://github.com/nagataaaas/wots4-fps-uncap) | 30FPS の上限を外し、60・90・120FPS で遊べるようにします。 |
+| [autosave](https://github.com/nagataaaas/wots4-autosave) | 死亡時の「リトライ」で戻る状態を自動でセーブし、ロード画面から続きを遊べるようにします。 |
 | [debugger](https://github.com/nagataaaas/wots4-debugger) | Mod を作るときに使うデバッグツールです。 |
 
 ## インストール
