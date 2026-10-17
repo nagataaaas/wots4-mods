@@ -1,6 +1,6 @@
 # {Mod の名前}
 
-[English](README.en.md)
+[English](README.en.md) | [更新履歴](CHANGELOG.md)
 
 > [!NOTE]
 > この Mod は [Steam 版『侍道4』](https://store.steampowered.com/app/312780/4/?l=japanese)専用です。

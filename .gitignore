@@ -66,3 +66,4 @@ logs
 *.njsproj
 *.sln
 *.sw?
+.pi
