@@ -10,6 +10,7 @@
 !/mods/tweaks
 !/mods/fps_uncap
 !/mods/autosave
+!/mods/better_save_name
 
 # AI tooling
 AGENTS.md

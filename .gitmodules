@@ -19,3 +19,6 @@
 [submodule "mods/autosave"]
 	path = mods/autosave
 	url = https://github.com/nagataaaas/wots4-autosave.git
+[submodule "mods/better_save_name"]
+	path = mods/better_save_name
+	url = https://github.com/nagataaaas/wots4-better-save-name.git
