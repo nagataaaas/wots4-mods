@@ -1,6 +1,7 @@
 #pragma once
-// What the Mods registered through HostApi: options pages and game event
-// callbacks. It does not touch the game; wots4_game_hooks.cpp reads it.
+// What the Mods registered through HostApi: options pages, game event callbacks
+// and conversation lines and texts. It does not touch the game;
+// wots4_game_hooks.cpp and wots4_game_conversation.cpp read it.
 // Registration runs on the startup thread only, before any hook is enabled,
 // so the hooks read it without locks.
 #include <wots4/mod_api.h>
@@ -59,12 +60,42 @@ struct GameEventHandler {
     void* context;
 };
 
+// Where the game keeps one script text, found the first time the hooks need it. The
+// scripts are loaded once, so a text found for one script table stays where it is.
+struct FoundScriptText {
+    int32_t text;
+    const void* scriptTable = nullptr;  // The table it was found in, or nullptr before
+    const wchar_t* gameText = nullptr;
+};
+
+struct ConversationChoiceDefinition {
+    HMODULE owner;
+    int32_t script;
+    std::vector<FoundScriptText> choiceTexts;
+    OptionText label;
+    ConversationPlacement placement;
+    ConversationCondition shown;
+    ConversationSelected selected;
+    void* context;
+};
+
+struct ScriptTextReplacementDefinition {
+    HMODULE owner;
+    FoundScriptText found;
+    int32_t script;
+    std::vector<OptionText> variants;
+    ScriptTextChooser choose;
+    void* context;
+};
+
 // Which groups of game hooks match this exe. Set before the Mods initialize.
 struct SupportedGameHooks {
     bool options = false;
     bool frame = false;
     bool optionsSaved = false;
     bool gameTexts = false;
+    bool conversations = false;
+    bool scriptTexts = false;
 };
 
 struct HostRegistry {
@@ -73,6 +104,8 @@ struct HostRegistry {
     std::vector<OptionsPageDefinition> pages;
     std::vector<GameEventHandler> frameHandlers;
     std::vector<GameEventHandler> optionsSavedHandlers;
+    std::vector<ConversationChoiceDefinition> conversationChoices;
+    std::vector<ScriptTextReplacementDefinition> scriptTextReplacements;
     bool textsResolved = false;  // Every OptionText::text is final; pointers into it are safe
     void (*log)(HMODULE owner, const std::string& message) = nullptr;
 };
@@ -263,6 +296,10 @@ inline void removeRegistrations(HMODULE owner) {
     frame.erase(std::remove_if(frame.begin(), frame.end(), ownedBy), frame.end());
     auto& saved = hostRegistry.optionsSavedHandlers;
     saved.erase(std::remove_if(saved.begin(), saved.end(), ownedBy), saved.end());
+    auto& choices = hostRegistry.conversationChoices;
+    choices.erase(std::remove_if(choices.begin(), choices.end(), ownedBy), choices.end());
+    auto& replacements = hostRegistry.scriptTextReplacements;
+    replacements.erase(std::remove_if(replacements.begin(), replacements.end(), ownedBy), replacements.end());
 }
 
 // HostApi::onFrame
@@ -275,6 +312,88 @@ inline BOOL WINAPI onFrame(HMODULE owner, GameEventCallback callback, void* cont
 inline BOOL WINAPI onOptionsSaved(HMODULE owner, GameEventCallback callback, void* context) {
     return addGameEventHandler(hostRegistry.optionsSavedHandlers, hostRegistry.supported.optionsSaved,
         "onOptionsSaved", owner, callback, context);
+}
+
+// ---------------------------------------------------------------- conversations
+
+// The choice window takes each line break as the start of another line.
+inline bool hasLineBreak(const wchar_t* text) {
+    return !isGameText(text) && wcschr(text, L'\n');
+}
+
+// A line of a conversation: a game text number, or a string of 1..maxConversationTextChars
+// characters on one line, in both languages.
+inline bool isValidConversationLine(const LocalizedText& text) {
+    return isValidText(text, maxConversationTextChars) && !hasLineBreak(text.japanese) && !hasLineBreak(text.english);
+}
+
+// nullptr if the line can be added, else why it cannot.
+inline const char* conversationChoiceProblem(const ConversationChoice* choice) {
+    if (!hostRegistry.registrationOpen) return "it was called outside Wots4ModInitialize";
+    if (!hostRegistry.supported.conversations) return "this version of the game is not supported";
+    if (!choice || choice->size < sizeof(ConversationChoice)) return "the choice is null or its size is too small";
+    if (!choice->choiceTexts || choice->choiceTextCount == 0) return "the choice names no text of the game's choices";
+    if (!isValidConversationLine(choice->label))
+        return "the label is missing in a language, empty, longer than 60 characters, or has a line break";
+    if (choice->placement != conversationBeforeLast && choice->placement != conversationLast)
+        return "the placement is unknown";
+    if (!choice->selected) return "the selected callback is required";
+    return nullptr;
+}
+
+// HostApi::addConversationChoice
+inline BOOL WINAPI addConversationChoice(HMODULE owner, const ConversationChoice* choice) {
+    if (const char* problem = conversationChoiceProblem(choice)) {
+        registryLog(owner, std::string("addConversationChoice refused: ") + problem);
+        return FALSE;
+    }
+    try {
+        ConversationChoiceDefinition definition{owner, choice->script, {}, copyText(choice->label), choice->placement,
+            choice->shown, choice->selected, choice->context};
+        for (uint32_t i = 0; i < choice->choiceTextCount; ++i) definition.choiceTexts.push_back({choice->choiceTexts[i]});
+        hostRegistry.conversationChoices.push_back(std::move(definition));
+    } catch (const std::bad_alloc&) {
+        registryLog(owner, "addConversationChoice refused: out of memory");
+        return FALSE;
+    }
+    return TRUE;
+}
+
+// nullptr if the replacement can be added, else why it cannot.
+inline const char* scriptTextReplacementProblem(const ScriptTextReplacement* replacement) {
+    if (!hostRegistry.registrationOpen) return "it was called outside Wots4ModInitialize";
+    if (!hostRegistry.supported.scriptTexts) return "this version of the game is not supported";
+    if (!replacement || replacement->size < sizeof(ScriptTextReplacement))
+        return "the replacement is null or its size is too small";
+    if (!replacement->variants || replacement->variantCount == 0 || replacement->variantCount > maxScriptTextVariants)
+        return "a replacement needs 1 to 8 variants";
+    for (uint32_t i = 0; i < replacement->variantCount; ++i) {
+        if (!isValidText(replacement->variants[i], maxScriptTextChars))
+            return "a variant is missing in a language, empty, or longer than 255 characters";
+    }
+    return nullptr;
+}
+
+// HostApi::replaceScriptText
+inline BOOL WINAPI replaceScriptText(HMODULE owner, const ScriptTextReplacement* replacement) {
+    if (const char* problem = scriptTextReplacementProblem(replacement)) {
+        registryLog(owner, std::string("replaceScriptText refused: ") + problem);
+        return FALSE;
+    }
+    for (const ScriptTextReplacementDefinition& other : hostRegistry.scriptTextReplacements) {
+        if (other.script == replacement->script && other.found.text == replacement->text)
+            registryLog(owner, "replaceScriptText: another Mod also replaces this text; the first one that chooses a variant shows it");
+    }
+    try {
+        ScriptTextReplacementDefinition definition{owner, {replacement->text}, replacement->script, {},
+            replacement->choose, replacement->context};
+        for (uint32_t i = 0; i < replacement->variantCount; ++i) definition.variants.push_back(copyText(replacement->variants[i]));
+        hostRegistry.scriptTextReplacements.push_back(std::move(definition));
+    } catch (const std::bad_alloc&) {
+        registryLog(owner, "replaceScriptText refused: out of memory");
+        return FALSE;
+    }
+    return TRUE;
 }
 
 }  // namespace wots4

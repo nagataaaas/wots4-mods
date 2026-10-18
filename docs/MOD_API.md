@@ -71,6 +71,9 @@ Contents of `ModContext`:
 | `onFrame(owner, callback, context)`                      | Calls `callback(context)` once per game frame, after the game's update                   |
 | `onOptionsSaved(owner, callback, context)`               | Calls `callback(context)` after the game wrote its options to `S4-SETTINGS.ini`          |
 | `findGameText(number)`                                   | Text number `number` of the game's UI texts (GameTextUI) in the game's language (below)  |
+| `addConversationChoice(owner, choice)`                   | Adds a line to the choices of a townsperson's talk (below)                               |
+| `replaceScriptText(owner, replacement)`                  | Shows another text where a talk shows one of its script texts (below)                    |
+| `showConversationMenu(owner, session, items, count, selected, context)` | Shows a menu of the Mod in the talk's choice window (below)                |
 
 `HostApi` only grows at the end, and `size` is `sizeof(wots4::HostApi)` of the ModLoader. A ModLoader older than the SDK may lack the last members, so check only the members the Mod uses: `host->size >= offsetof(wots4::HostApi, findGameText) + sizeof(host->findGameText)`. Checking `host->size >= sizeof(wots4::HostApi)` refuses older ModLoaders even when the Mod does not use the new members.
 
@@ -78,8 +81,8 @@ Contents of `ModContext`:
 
 - `claim` only reserves. The Mod does the patching itself (MinHook, etc.).
 - Call `claim` and `releaseClaims` from the same thread as initialization (the game's thread).
-- `addOptionsPage`, `onFrame` and `onOptionsSaved` are accepted only inside `Wots4ModInitialize`. They return FALSE if the arguments are outside the limits below, or if this version of the game is not supported (the reason is written to `mod_loader.log`). If the Mod then returns FALSE from `Wots4ModInitialize`, the ModLoader forgets what it registered.
-- The ModLoader itself hooks the options menus, the frame update and the options save. It reserves those ranges with `claim` before the Mods initialize, so a Mod cannot hook them directly; use these functions instead. Several Mods can use them at the same time.
+- `addOptionsPage`, `onFrame`, `onOptionsSaved`, `addConversationChoice` and `replaceScriptText` are accepted only inside `Wots4ModInitialize`. They return FALSE if the arguments are outside the limits below, or if this version of the game is not supported (the reason is written to `mod_loader.log`). If the Mod then returns FALSE from `Wots4ModInitialize`, the ModLoader forgets what it registered.
+- The ModLoader itself hooks the options menus, the frame update, the options save, the talks' choices and the script texts. It reserves those ranges with `claim` before the Mods initialize, so a Mod cannot hook them directly; use these functions instead. Several Mods can use them at the same time.
 - Callbacks run on the game's thread. `onFrame` runs every frame: avoid file I/O, memory allocation and locks there.
 - This ABI does not pass STL types.
 
@@ -144,6 +147,47 @@ const wots4::OptionItem items[] = {
 const wots4::OptionsPageCallbacks callbacks{nullptr, readValues, valueChanged};
 const wots4::LocalizedText title{L"地図", L"Map"};
 if (!context->host->addOptionsPage(context->module, &title, items, 4, &callbacks)) return FALSE;
+```
+
+## Conversations
+
+A townsperson's talk shows its choices in a window of up to 4 lines. `addConversationChoice` adds a line to some of those choices; once the player picks it, the Mod's callback may show menus of its own in the same window with `showConversationMenu`. `replaceScriptText` shows another text in place of one of the talk's texts. Lines and texts are named as in the game's action scripts: `script` is the script's ID, and a text is one of that script's text numbers. For example, the ghost of the graveyard runs script 143, whose choices are its texts 601 to 604, each ending with 用は無い / I don't need anything right now.
+
+| Limit                              | Value                                                |
+| ---------------------------------- | ---------------------------------------------------- |
+| Line, menu item                    | Up to 60 characters (`wots4::maxConversationTextChars`), one line |
+| Items of a Mod menu                | 1 to 16 (`wots4::maxConversationMenuItems`)          |
+| Script text variant                | Up to 255 characters; lines separated by `L'\n'`     |
+| Variants of a replaced text        | 1 to 8                                               |
+| A choice window                    | 255 characters in all                                |
+
+`wots4::ConversationChoice`:
+
+- `choiceTexts`: the choice texts that get the line. The line is shown wherever the script shows one of them.
+- `placement`: `wots4::conversationBeforeLast` puts the line before the game's last line, `wots4::conversationLast` after it. Lines of several Mods follow the order the Mods were loaded in, then the order they were added.
+- `shown(context, conversation)`: called each time the choices open; FALSE hides the line. `nullptr` always shows it.
+- `selected(context, conversation, session, item)`: the player picked the line (`item` is 0).
+
+Past 4 lines, the window shows 3 lines and 次へ / Next, which turns to the next page (from the last page, back to the first). If the lines do not fit the window's 255 characters, the Mods' lines are not added and the reason is written to `mod_loader.log`.
+
+In a `selected` callback, the Mod may call `showConversationMenu(owner, session, items, count, selected, context)` with the `session` it was given, and return `wots4::conversationContinue`: the window then shows the items, and `selected` gets the index of the chosen item, where it may show another menu. Returning `wots4::conversationEnd` ends the talk as if the player had closed the window. When the player leaves a Mod's menu without a choice (closes it, leaves it alone, or walks away), `selected` gets `wots4::conversationCancelled` and the talk goes on as the game would; its reply is ignored. The callbacks run inside the game's update of the talk: to start something large, such as a fight or a map change, remember it and start it from `onFrame`.
+
+`wots4::ScriptTextReplacement` gives up to 8 variants for one text of a script. `choose(context, query)` returns the index of the variant to show, or -1 for the game's own text; `nullptr` always shows the first variant. It is called each time the game reads the text, sometimes more than once for one line, so keep it quick. A choice text that a Mod replaced still gets the Mods' lines.
+
+The texts follow the game's language like the options pages: each is a `wots4::LocalizedText`, and a game text (`wots4::gameText(number)`) is allowed. The ModLoader reads them when the first talk opens.
+
+```cpp
+const int32_t ghostChoices[] = {601, 602, 603, 604};
+const wots4::ConversationChoice fight{sizeof(wots4::ConversationChoice), 143, ghostChoices, 4,
+    {L"強者たちと戦う", L"Fight the strong"}, wots4::conversationBeforeLast, clearedTheGame, fightSelected, nullptr};
+if (!context->host->addConversationChoice(context->module, &fight)) return FALSE;
+
+wots4::ConversationReply WINAPI fightSelected(void*, const wots4::ConversationContext*,
+    wots4::ConversationSession session, uint32_t) {
+    const wots4::LocalizedText sides[] = {{L"攘夷", L"Joui"}, {L"幕府", L"Shogunate"}};
+    host->showConversationMenu(module, session, sides, 2, sideSelected, nullptr);
+    return wots4::conversationContinue;
+}
 ```
 
 ## Adding a Mod

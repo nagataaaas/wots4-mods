@@ -34,7 +34,10 @@ add_test(NAME wots4_mod_loader_probe COMMAND wots4_mod_loader_probe ${tree_nativ
 # Options pages and game events (HostApi v2)
 wots4_add_probe(wots4_host_registry_probe SOURCES wots4_host_registry_probe.cpp
     INCLUDES ${PROJECT_SOURCE_DIR}/src)
-wots4_add_probe(wots4_game_hooks_probe SOURCES wots4_game_hooks_probe.cpp
+wots4_add_probe(wots4_game_hooks_probe SOURCES wots4_game_hooks_probe.cpp ${PROJECT_SOURCE_DIR}/src/wots4_game_conversation.cpp
+    LIBS wots4_minhook INCLUDES ${PROJECT_SOURCE_DIR}/src)
+# Talk choices and script texts, against synthetic code
+wots4_add_probe(wots4_conversation_probe SOURCES wots4_conversation_probe.cpp ${PROJECT_SOURCE_DIR}/src/wots4_game_hooks.cpp
     LIBS wots4_minhook INCLUDES ${PROJECT_SOURCE_DIR}/src)
 set(WOTS4_UNPACKED_EXE "${PROJECT_SOURCE_DIR}/research/bin/WayOfTheSamurai4.unpacked.exe" CACHE FILEPATH
     "The decrypted game exe (Steamless output) for tests labelled needs_exe")

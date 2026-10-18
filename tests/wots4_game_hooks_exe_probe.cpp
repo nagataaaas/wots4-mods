@@ -2,6 +2,7 @@
 // mapped into this process's memory. Only the copy is patched; no game code runs.
 // Usage: wots4_game_hooks_exe_probe <WayOfTheSamurai4.unpacked.exe>
 #include "wots4_game_hooks.cpp"
+#include "wots4_game_conversation.cpp"
 #include <cstdio>
 #include <vector>
 
@@ -66,6 +67,10 @@ void WINAPI readNothing(void*, uint32_t*, uint32_t) {}
 void WINAPI ignoreChange(void*, uint32_t, uint32_t) {}
 void WINAPI ignoreEvent(void*) {}
 
+ConversationReply WINAPI endTalk(void*, const ConversationContext*, ConversationSession, uint32_t) {
+    return conversationEnd;
+}
+
 void registerOnePageAndEvents() {
     const auto mod = reinterpret_cast<HMODULE>(0x10000);
     const LocalizedText onOff[] = {localizedGameText(211), localizedGameText(212)};
@@ -76,6 +81,13 @@ void registerOnePageAndEvents() {
     check("page accepted on the supported exe", addOptionsPage(mod, &title, &item, 1, &callbacks));
     check("onFrame accepted", onFrame(mod, ignoreEvent, nullptr));
     check("onOptionsSaved accepted", onOptionsSaved(mod, ignoreEvent, nullptr));
+    const int32_t ghostChoices[] = {601, 602, 603, 604};
+    const ConversationChoice choice{sizeof(ConversationChoice), 143, ghostChoices, 4, {L"戦う", L"Fight"},
+        conversationBeforeLast, nullptr, endTalk, nullptr};
+    check("a conversation line accepted", addConversationChoice(mod, &choice));
+    const LocalizedText greeting{L"よく来た", L"Welcome"};
+    const ScriptTextReplacement replacement{sizeof(ScriptTextReplacement), 143, 100, &greeting, 1, nullptr, nullptr};
+    check("a script text replacement accepted", replaceScriptText(mod, &replacement));
     hostRegistry.registrationOpen = false;
 }
 
@@ -111,9 +123,11 @@ int wmain(int argc, wchar_t** argv) {
     prepareGameHooks(reinterpret_cast<HMODULE>(image), owner);
     check("the exe copy is the supported version, every site matches",
         hostRegistry.supported.options && hostRegistry.supported.frame && hostRegistry.supported.optionsSaved &&
-        hostRegistry.supported.gameTexts);
+        hostRegistry.supported.gameTexts && hostRegistry.supported.conversations && hostRegistry.supported.scriptTexts);
     check("every site is reserved for the ModLoader",
-        sitesReserved(optionsMenuSites) && sitesReserved(frameSites) && sitesReserved(optionsSavedSites));
+        sitesReserved(optionsMenuSites) && sitesReserved(frameSites) && sitesReserved(optionsSavedSites) &&
+        sitesReserved(conversationSites) && sitesReserved(scriptTextSites));
+    check("a Mod cannot reserve the choice update", !claimHook(reinterpret_cast<HMODULE>(0x10000), gameAddress(0x419a50), 1));
     check("a Mod cannot reserve the pause menu builder",
         !claimHook(reinterpret_cast<HMODULE>(0x10000), gameAddress(0x676cb0), 32));
     check("a Mod cannot reserve the frame update", !claimHook(reinterpret_cast<HMODULE>(0x10000), gameAddress(0x50e870), 1));
@@ -125,7 +139,10 @@ int wmain(int argc, wchar_t** argv) {
         allEnabled &= MH_EnableHook(reinterpret_cast<void*>(gameAddress(site.address))) == MH_ERROR_ENABLED;
     allEnabled &= MH_EnableHook(reinterpret_cast<void*>(gameAddress(frameSites[0].address))) == MH_ERROR_ENABLED;
     allEnabled &= MH_EnableHook(reinterpret_cast<void*>(gameAddress(optionsSavedSites[0].address))) == MH_ERROR_ENABLED;
-    check("MinHook installed all 13 hooks on the copy", allEnabled);
+    for (const HookSite& site : conversationSites)
+        allEnabled &= MH_EnableHook(reinterpret_cast<void*>(gameAddress(site.address))) == MH_ERROR_ENABLED;
+    allEnabled &= MH_EnableHook(reinterpret_cast<void*>(gameAddress(scriptTextSites[0].address))) == MH_ERROR_ENABLED;
+    check("MinHook installed all 16 hooks on the copy", allEnabled);
     check("the Mod page methods start from the game's page vtable",
         modPageMethods[0] == *reinterpret_cast<uintptr_t*>(gameAddress(optionsPageMethods)) &&
         modPageMethods[buildItemsSlot / 4] == reinterpret_cast<uintptr_t>(buildItemsMethod));
@@ -155,8 +172,17 @@ int wmain(int argc, wchar_t** argv) {
     prepareGameHooks(reinterpret_cast<HMODULE>(image), owner);
     check("with the language code changed, options pages and game texts are unavailable and the rest still works",
         !hostRegistry.supported.options && !hostRegistry.supported.gameTexts && hostRegistry.supported.frame &&
-        hostRegistry.supported.optionsSaved);
+        hostRegistry.supported.optionsSaved && !hostRegistry.supported.conversations);
     storeLanguage[2] ^= 1;
+
+    // The conversation hooks rely on the window's cursor at +0x218 (0x419bc0).
+    uint8_t* readCursor = image + (0x419bc2 - exeImageBase);
+    readCursor[0] ^= 1;
+    hookClaims.clear();
+    prepareGameHooks(reinterpret_cast<HMODULE>(image), owner);
+    check("with the cursor read changed, conversations are unavailable and the options still work",
+        !hostRegistry.supported.conversations && !hostRegistry.supported.scriptTexts && hostRegistry.supported.options);
+    readCursor[0] ^= 1;
 
     uint8_t* wrongVersion = image;
     reinterpret_cast<IMAGE_NT_HEADERS32*>(wrongVersion + reinterpret_cast<IMAGE_DOS_HEADER*>(wrongVersion)->e_lfanew)

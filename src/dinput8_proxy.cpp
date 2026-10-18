@@ -2,6 +2,7 @@
 // DirectInput8Create call also loads the Mods (see wots4_mod_loader.h).
 #include "wots4_mod_loader.h"
 #include "wots4_game_hooks.h"
+#include "wots4_game_conversation.h"
 #define DIRECTINPUT_VERSION 0x0800
 #include <dinput.h>
 #include <cstdio>
@@ -135,7 +136,8 @@ void logLoadResult(const wots4::LoadResult& result) {
 
 const wots4::HostApi hostApi{sizeof(wots4::HostApi), wots4::modApiVersion,
     hostLog, wots4::claimHook, wots4::releaseHookClaims,
-    wots4::addOptionsPage, wots4::onFrame, wots4::onOptionsSaved, wots4::game::findGameText};
+    wots4::addOptionsPage, wots4::onFrame, wots4::onOptionsSaved, wots4::game::findGameText,
+    wots4::addConversationChoice, wots4::replaceScriptText, wots4::game::showConversationMenu};
 
 void registryLog(HMODULE owner, const std::string& message) {
     writeLog(ownerName(owner).c_str(), message);

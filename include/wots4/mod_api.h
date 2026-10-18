@@ -94,6 +94,81 @@ struct OptionsPageCallbacks {
 
 using GameEventCallback = void (WINAPI*)(void* context);
 
+// ---------------------------------------------------------------- conversations
+// A talk with a townsperson shows its choices in a window of up to 4 lines. A Mod may add
+// a line to the choices of an action script and, once the player picks it, show menus of
+// its own in the same window. Scripts and texts are numbered as in the game's packs:
+// script is the action script's ID (the ghost of the graveyard runs script 143) and a
+// text is a number of that script's texts (its choices are texts 601 to 604).
+
+constexpr uint32_t maxConversationLines = 4;        // The game's choice window shows 4 lines at most
+constexpr uint32_t maxConversationTextChars = 60;   // Per line; 4 lines fit the window's 255 characters
+constexpr uint32_t maxConversationMenuItems = 16;   // Past 4 lines, the ModLoader pages them with 次へ / Next
+constexpr uint32_t maxScriptTextChars = 255;        // The talk's balloon holds 255 characters
+constexpr uint32_t maxScriptTextVariants = 8;
+constexpr uint32_t conversationCancelled = 0xffffffff;
+
+enum ConversationPlacement : uint32_t {
+    conversationBeforeLast = 0,  // Before the game's last line, which is usually 用は無い / I don't need anything
+    conversationLast = 1,
+};
+
+// The choice being shown. Valid only during the callback.
+struct ConversationContext {
+    uint32_t size;          // sizeof(ConversationContext)
+    int32_t script;         // Action script ID
+    int32_t choiceText;     // The text of the game's choices
+    uint32_t speakerId;     // Instance ID of the townsperson the player talks to
+};
+
+typedef uint32_t ConversationSession;  // One talk's choices; never 0
+
+enum ConversationReply : uint32_t {
+    conversationEnd = 0,       // Ends the talk, as if the player had closed the window
+    conversationContinue = 1,  // The callback called showConversationMenu
+};
+
+// Called on the game thread when the choices open. TRUE shows the line.
+using ConversationCondition = BOOL (WINAPI*)(void* context, const ConversationContext* conversation);
+// Called on the game thread. item is the index of the chosen item (0 for an added line), or
+// conversationCancelled when a Mod menu was left without a choice (closed, left alone, walked
+// away); then the game goes on as it would and the reply is ignored.
+using ConversationSelected = ConversationReply (WINAPI*)(void* context, const ConversationContext* conversation,
+    ConversationSession session, uint32_t item);
+
+struct ConversationChoice {
+    uint32_t size;                // sizeof(ConversationChoice)
+    int32_t script;
+    const int32_t* choiceTexts;   // The choices that get the line
+    uint32_t choiceTextCount;     // 1 or more
+    LocalizedText label;          // Up to maxConversationTextChars
+    ConversationPlacement placement;
+    ConversationCondition shown;  // nullptr: always shown
+    ConversationSelected selected;
+    void* context;
+};
+
+// Which text the game is about to show.
+struct ScriptTextQuery {
+    uint32_t size;  // sizeof(ScriptTextQuery)
+    int32_t script;
+    int32_t text;
+};
+// Called on the game thread each time the game reads the text. Returns the index of the
+// variant to show, or -1 for the game's text. Keep it quick: it may be called more than
+// once for one line.
+using ScriptTextChooser = int32_t (WINAPI*)(void* context, const ScriptTextQuery* query);
+
+struct ScriptTextReplacement {
+    uint32_t size;  // sizeof(ScriptTextReplacement)
+    int32_t script;
+    int32_t text;
+    const LocalizedText* variants;  // Up to maxScriptTextChars each; lines separated by L'\n'
+    uint32_t variantCount;          // 1 to maxScriptTextVariants
+    ScriptTextChooser choose;       // nullptr: always variants[0]
+    void* context;
+};
+
 // Services of the ModLoader. owner is the calling Mod's module (ModContext::module).
 struct HostApi {
     uint32_t size, version;  // sizeof(HostApi), modApiVersion
@@ -123,6 +198,18 @@ struct HostApi {
     // its texts yet, the number is out of range, or this version of the game is not
     // supported. The game owns the string: copy it on the game thread before keeping it.
     const wchar_t* (WINAPI* findGameText)(uint32_t number);
+
+    // Conversations. addConversationChoice and replaceScriptText are accepted only during
+    // Wots4ModInitialize and copy everything.
+    // Adds a line to the game's choices. Lines of several Mods follow the Mods' load order.
+    BOOL (WINAPI* addConversationChoice)(HMODULE owner, const ConversationChoice* choice);
+    // Shows another text where the game shows one of its script texts.
+    BOOL (WINAPI* replaceScriptText)(HMODULE owner, const ScriptTextReplacement* replacement);
+    // Accepted only inside a ConversationSelected call to owner for session. Copies the items
+    // (1 to maxConversationMenuItems, up to maxConversationTextChars each); the window shows
+    // them once the callback returns conversationContinue, and selected gets the choice.
+    BOOL (WINAPI* showConversationMenu)(HMODULE owner, ConversationSession session,
+        const LocalizedText* items, uint32_t count, ConversationSelected selected, void* context);
 };
 
 // Passed to Wots4ModInitialize.

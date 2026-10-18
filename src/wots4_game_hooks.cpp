@@ -11,6 +11,7 @@
 // A page itself shows 8 items; one with more scrolls (see "scrolling pages").
 // Addresses are virtual addresses of the exe (ImageBase 0x400000).
 #include "wots4_game_hooks.h"
+#include "wots4_game_conversation.h"
 #include "wots4_game_hook_sites.h"
 #include "wots4_game_menu.h"
 #include <memory>
@@ -1476,7 +1477,7 @@ void prepareGameHooks(HMODULE game, HMODULE owner) {
     hookOwner = owner;
     hostRegistry.supported = {};
     if (!exeTimestampMatches(game)) {
-        registryLog(nullptr, "this game exe is not the supported version; options pages, onFrame, onOptionsSaved and findGameText are unavailable");
+        registryLog(nullptr, "this game exe is not the supported version; options pages, onFrame, onOptionsSaved, findGameText and conversations are unavailable");
         return;
     }
     hostRegistry.supported.gameTexts = languageCodeMatches();
@@ -1489,6 +1490,7 @@ void prepareGameHooks(HMODULE game, HMODULE owner) {
     if (!hostRegistry.supported.options) registryLog(nullptr, "the options menu code is not as expected; options pages are unavailable");
     if (!hostRegistry.supported.frame) registryLog(nullptr, "the frame update code is not as expected; onFrame is unavailable");
     if (!hostRegistry.supported.optionsSaved) registryLog(nullptr, "the options save code is not as expected; onOptionsSaved is unavailable");
+    prepareConversationHooks();
 }
 
 const wchar_t* WINAPI findGameText(uint32_t number) {
@@ -1504,11 +1506,12 @@ void installGameHooks() {
     const bool wantOptions = !hostRegistry.pages.empty();
     const bool wantFrame = !hostRegistry.frameHandlers.empty();
     const bool wantOptionsSaved = !hostRegistry.optionsSavedHandlers.empty();
-    if (!wantOptions && !wantFrame && !wantOptionsSaved) return;
+    const bool wantConversations = wantsConversationHooks();
+    if (!wantOptions && !wantFrame && !wantOptionsSaved && !wantConversations) return;
     const MH_STATUS status = MH_Initialize();
     if (status != MH_OK && status != MH_ERROR_ALREADY_INITIALIZED) {
         registryLog(nullptr, std::string("could not start MinHook (") + MH_StatusToString(status) +
-            "); options pages, onFrame and onOptionsSaved are unavailable");
+            "); options pages, onFrame, onOptionsSaved and conversations are unavailable");
         return;
     }
     if (wantOptions) {
@@ -1523,6 +1526,7 @@ void installGameHooks() {
     if (wantFrame && installSites(frameSites, "frame update")) registryLog(nullptr, "frame update hook installed");
     if (wantOptionsSaved && installSites(optionsSavedSites, "options save"))
         registryLog(nullptr, "options save hook installed");
+    if (wantConversations) installConversationHooks();
 }
 
 }  // namespace wots4::game

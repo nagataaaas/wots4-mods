@@ -64,7 +64,8 @@ function(wots4_add_loader)
     wots4_use_minhook()
     wots4_generate_version_header()
     add_library(wots4_loader SHARED ${WOTS4_ROOT}/src/dinput8_proxy.cpp ${WOTS4_ROOT}/src/dinput8_proxy.def
-        ${WOTS4_ROOT}/src/wots4_game_hooks.cpp ${WOTS4_ROOT}/src/dinput8_proxy.rc)
+        ${WOTS4_ROOT}/src/wots4_game_hooks.cpp ${WOTS4_ROOT}/src/wots4_game_conversation.cpp
+        ${WOTS4_ROOT}/src/dinput8_proxy.rc)
     target_include_directories(wots4_loader PRIVATE ${WOTS4_VERSION_INCLUDE_DIR})
     target_link_libraries(wots4_loader PRIVATE wots4::sdk wots4_minhook)
     set_target_properties(wots4_loader PROPERTIES OUTPUT_NAME dinput8)

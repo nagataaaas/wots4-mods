@@ -350,6 +350,79 @@ void checkTitlePages() {
     check("a freed slot is reused", table.add(reinterpret_cast<uintptr_t>(others[0])) != nullptr);
 }
 
+ConversationReply WINAPI ignoreSelection(void*, const ConversationContext*, ConversationSession, uint32_t) {
+    return conversationEnd;
+}
+
+void checkConversationLimits() {
+    const auto mod = fakeModule(0x10000);
+    const auto other = fakeModule(0x20000);
+    resetRegistry(true);
+    hostRegistry.supported.conversations = hostRegistry.supported.scriptTexts = true;
+    const int32_t texts[] = {601, 602};
+    ConversationChoice choice{sizeof(ConversationChoice), 143, texts, 2, {L"強者たちと戦う", L"Fight the strong"},
+        conversationBeforeLast, nullptr, ignoreSelection, nullptr};
+    check("a valid conversation line is accepted", addConversationChoice(mod, &choice));
+    const auto& copied = hostRegistry.conversationChoices.back();
+    check("the line is copied with its texts", copied.script == 143 && copied.choiceTexts.size() == 2 &&
+        copied.choiceTexts[1].text == 602 && !copied.choiceTexts[1].scriptTable &&
+        copied.label.japanese.string == L"強者たちと戦う");
+
+    ConversationChoice refused = choice;
+    refused.choiceTextCount = 0;
+    check("a line for no choice text is refused", !addConversationChoice(mod, &refused));
+    refused = choice;
+    refused.selected = nullptr;
+    check("a line without a selected callback is refused", !addConversationChoice(mod, &refused));
+    refused = choice;
+    refused.label = inBoth(L"two\nlines");
+    check("a label with a line break is refused", !addConversationChoice(mod, &refused));
+    std::wstring longLabel(61, L'x');
+    refused.label = inBoth(longLabel.c_str());
+    check("a 61-character label is refused", !addConversationChoice(mod, &refused));
+    longLabel.resize(60);
+    refused.label = inBoth(longLabel.c_str());
+    check("a 60-character label is accepted", addConversationChoice(mod, &refused));
+    refused = choice;
+    refused.size = sizeof(ConversationChoice) - 4;
+    check("a smaller size is refused", !addConversationChoice(mod, &refused));
+    refused = choice;
+    refused.placement = static_cast<ConversationPlacement>(2);
+    check("an unknown placement is refused", !addConversationChoice(mod, &refused));
+    refused = choice;
+    refused.label = localizedGameText(120);
+    check("a game text label is accepted", addConversationChoice(mod, &refused));
+
+    const LocalizedText variants[] = {{L"一", L"One"}, {L"二", L"Two"}};
+    ScriptTextReplacement replacement{sizeof(ScriptTextReplacement), 143, 100, variants, 2, nullptr, nullptr};
+    check("a valid text replacement is accepted", replaceScriptText(other, &replacement));
+    check("the replacement is copied", hostRegistry.scriptTextReplacements.back().variants[1].english.string == L"Two" &&
+        hostRegistry.scriptTextReplacements.back().found.text == 100);
+    ScriptTextReplacement noVariants = replacement;
+    noVariants.variantCount = 0;
+    check("a replacement without variants is refused", !replaceScriptText(other, &noVariants));
+    noVariants.variantCount = maxScriptTextVariants + 1;
+    check("a replacement with 9 variants is refused", !replaceScriptText(other, &noVariants));
+    std::wstring longText(256, L'y');
+    const LocalizedText tooLong[] = {inBoth(longText.c_str())};
+    ScriptTextReplacement longReplacement = replacement;
+    longReplacement.variants = tooLong;
+    longReplacement.variantCount = 1;
+    check("a 256-character variant is refused", !replaceScriptText(other, &longReplacement));
+
+    removeRegistrations(mod);
+    check("a refused Mod's lines are forgotten, the other Mod's text stays",
+        hostRegistry.conversationChoices.empty() && hostRegistry.scriptTextReplacements.size() == 1);
+
+    hostRegistry.registrationOpen = false;
+    check("a line outside initialization is refused", !addConversationChoice(mod, &choice));
+    check("a replacement outside initialization is refused", !replaceScriptText(mod, &replacement));
+    hostRegistry.registrationOpen = true;
+    hostRegistry.supported.conversations = hostRegistry.supported.scriptTexts = false;
+    check("an unsupported game refuses lines and replacements",
+        !addConversationChoice(mod, &choice) && !replaceScriptText(mod, &replacement));
+}
+
 }  // namespace
 
 int main() {
@@ -360,6 +433,7 @@ int main() {
     checkRefusedModIsForgotten();
     checkPauseMenuRows();
     checkTitlePages();
+    checkConversationLimits();
     printf("RESULT %u passed, %u failed\n", tests - failures, failures);
     return failures ? 1 : 0;
 }
