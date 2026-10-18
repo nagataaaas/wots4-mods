@@ -11,26 +11,16 @@
 // A page itself shows 8 items; one with more scrolls (see "scrolling pages").
 // Addresses are virtual addresses of the exe (ImageBase 0x400000).
 #include "wots4_game_hooks.h"
+#include "wots4_game_hook_sites.h"
 #include "wots4_game_menu.h"
-#include "wots4_mod_loader.h"
-#include <MinHook.h>
-#include <cstdio>
 #include <memory>
 #include <new>
 
 namespace wots4::game {
 namespace {
 
-constexpr uintptr_t exeImageBase = 0x400000;
 constexpr DWORD supportedExeTimestamp = 0x683d42eb;  // PE TimeDateStamp of the current Steam exe
 static_assert(modTitleTextBase == 0x7fff0000, "rowTextHook and rowLabelHook compare with this value");
-
-uintptr_t gameBase;
-HMODULE hookOwner;
-
-uintptr_t gameAddress(uint32_t virtualAddress) {
-    return gameBase + virtualAddress - exeImageBase;
-}
 
 // ---------------------------------------------------------------- game functions and objects
 
@@ -150,11 +140,6 @@ constexpr uint32_t pauseMenuRows = 0x90;
 constexpr uint32_t pauseMenuRowCount = 0x94;
 constexpr uint32_t pauseMenuCursor = 0x40;   // Set once the menu is in use; rows must not move then
 constexpr uint32_t pauseMenuHistory = 0x44;
-
-template <class T>
-T& field(void* object, uint32_t offset) {
-    return *reinterpret_cast<T*>(static_cast<uint8_t*>(object) + offset);
-}
 
 void* allocateGameObject(size_t size) {
     auto allocate = *reinterpret_cast<void*(__cdecl**)(size_t)>(gameAddress(gameNewSlot));
@@ -334,7 +319,10 @@ void copyItemText(uint8_t* item, uint32_t offset, const OptionText& text) {
     wcsncpy_s(reinterpret_cast<wchar_t*>(item + offset), itemTextChars, text.text.c_str(), _TRUNCATE);
 }
 
+}  // namespace
+
 // ---------------------------------------------------------------- game texts
+// Outside the unnamed namespace: the conversation hooks resolve their texts the same way.
 
 // GameTextUI: the text manager points to {count, pointer array}.
 constexpr uint32_t gameTextManager = 0x9e9680;
@@ -372,6 +360,8 @@ bool resolveText(OptionText& text, bool japanese) {
     }
     return true;
 }
+
+namespace {
 
 bool addHeaderBrackets(OptionText& text, bool japanese) {
     const HeaderBrackets& brackets = japanese ? japaneseHeaderBrackets : englishHeaderBrackets;
@@ -1170,18 +1160,6 @@ void __cdecl runOptionsSavedHandlers() {
 
 // ---------------------------------------------------------------- hook sites
 
-// A place to hook: the original bytes to expect, and how many bytes the hook
-// owns (whole instructions, at least the 5 of a jump). Operands that the
-// loader relocates (ASLR) are left out of the bytes.
-struct HookSite {
-    uint32_t address;
-    uint32_t length;
-    uint8_t expected[12];
-    uint32_t expectedLength;
-    void* detour;
-    void** original;  // Trampoline to the original code, or nullptr for mid-function hooks
-};
-
 // Resume addresses for the mid-function hooks, set by resolveResumeAddresses().
 uintptr_t enterPageResume, pageInputResume, leavePageResume;
 uintptr_t updatePageFound, updatePageMissing, drawIndexValid, drawIndexInvalid, drawPageResume;
@@ -1474,22 +1452,6 @@ void resolveResumeAddresses() {
     rowLabelModResume = gameAddress(0x5c643d);
 }
 
-template <size_t N>
-bool sitesMatch(const HookSite (&sites)[N]) {
-    for (const HookSite& site : sites) {
-        if (memcmp(reinterpret_cast<void*>(gameAddress(site.address)), site.expected, site.expectedLength)) return false;
-    }
-    return true;
-}
-
-template <size_t N>
-bool claimSites(const HookSite (&sites)[N]) {
-    for (const HookSite& site : sites) {
-        if (!claimHook(hookOwner, gameAddress(site.address), site.length)) return false;
-    }
-    return true;
-}
-
 // mov eax,[0x9e9680] (0x537b1d) ... mov [eax+0x4c],ebx (0x537b28): where the game stores the
 // menu language that menusInJapanese reads.
 bool languageCodeMatches() {
@@ -1505,34 +1467,6 @@ bool exeTimestampMatches(HMODULE game) {
     auto nt = reinterpret_cast<const IMAGE_NT_HEADERS32*>(reinterpret_cast<const uint8_t*>(game) + dos->e_lfanew);
     return dos->e_magic == IMAGE_DOS_SIGNATURE && nt->Signature == IMAGE_NT_SIGNATURE &&
         nt->FileHeader.TimeDateStamp == supportedExeTimestamp;
-}
-
-// Creates and enables every hook of a group. On failure, removes the ones it made.
-template <size_t N>
-bool installSites(const HookSite (&sites)[N], const char* groupName) {
-    size_t created = 0;
-    MH_STATUS status = MH_OK;
-    for (; created < N; ++created) {
-        const HookSite& site = sites[created];
-        void* unusedTrampoline = nullptr;
-        status = MH_CreateHook(reinterpret_cast<void*>(gameAddress(site.address)), site.detour,
-            site.original ? site.original : &unusedTrampoline);
-        if (status != MH_OK) break;
-    }
-    if (created == N) {
-        for (const HookSite& site : sites) {
-            status = MH_QueueEnableHook(reinterpret_cast<void*>(gameAddress(site.address)));
-            if (status != MH_OK) break;
-        }
-        if (status == MH_OK) status = MH_ApplyQueued();
-        if (status == MH_OK) return true;
-    }
-    for (size_t i = 0; i < created; ++i) MH_RemoveHook(reinterpret_cast<void*>(gameAddress(sites[i].address)));
-    char line[160];
-    sprintf_s(line, "could not install the %s hooks (MinHook: %s); that service is unavailable",
-        groupName, MH_StatusToString(status));
-    registryLog(nullptr, line);
-    return false;
 }
 
 }  // namespace
