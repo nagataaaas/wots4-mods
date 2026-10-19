@@ -17,6 +17,7 @@ Place it in the game folder as `dinput8.dll`, and it loads each Mod's `mods/<nam
 | [fps_uncap](https://github.com/nagataaaas/wots4-fps-uncap) | Removes the 30 FPS cap so the game runs at 60, 90 or 120 FPS. |
 | [autosave](https://github.com/nagataaaas/wots4-autosave) | Adds an autosave and lets you continue from it on the Load screen. |
 | [better_save_name](https://github.com/nagataaaas/wots4-better-save-name) | Shows each save's day, time of day, route and latest event in the save lists instead of its file name. |
+| [boss_rush](https://github.com/nagataaaas/wots4-boss-rush) | After "The Light of Hope", lets you fight the strong one after another through the Specter in the graveyard. |
 | [debugger](https://github.com/nagataaaas/wots4-debugger) | Provides debugging tools for making Mods. |
 
 ## Installation

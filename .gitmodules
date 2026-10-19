@@ -22,3 +22,6 @@
 [submodule "mods/better_save_name"]
 	path = mods/better_save_name
 	url = https://github.com/nagataaaas/wots4-better-save-name.git
+[submodule "mods/boss_rush"]
+	path = mods/boss_rush
+	url = https://github.com/nagataaaas/wots4-boss-rush.git

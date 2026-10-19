@@ -17,6 +17,7 @@ Steam 版『侍道4』（Way of the Samurai 4）向けの ModLoader です。
 | [fps_uncap](https://github.com/nagataaaas/wots4-fps-uncap) | 30FPS の上限を外し、60・90・120FPS で遊べるようにします。 |
 | [autosave](https://github.com/nagataaaas/wots4-autosave) | オートセーブを追加し、ロード画面から続きを遊べるようにします。 |
 | [better_save_name](https://github.com/nagataaaas/wots4-better-save-name) | セーブの一覧に、ファイル名の代わりに日数・時間帯・ルート・直近のイベントを表示します。 |
+| [boss_rush](https://github.com/nagataaaas/wots4-boss-rush) | 希望の光の後、墓場の幽霊から強者たちと次々に戦えるようにします。 |
 | [debugger](https://github.com/nagataaaas/wots4-debugger) | Mod を作るときに使うデバッグツールです。 |
 
 ## インストール
