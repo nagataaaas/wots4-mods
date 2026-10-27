@@ -4,6 +4,7 @@
 // Context strings live through initialization; copy them if needed later.
 // Host and modules live to process exit. No STL crosses this ABI.
 #include <windows.h>
+#include <cstddef>
 #include <cstdint>
 #include <initializer_list>
 
@@ -211,6 +212,10 @@ struct HostApi {
     BOOL (WINAPI* showConversationMenu)(HMODULE owner, ConversationSession session,
         const LocalizedText* items, uint32_t count, ConversationSelected selected, void* context);
 };
+
+// True when the ModLoader's HostApi has member: an older ModLoader's ends earlier.
+#define WOTS4_HOST_HAS(host, member) \
+    ((host)->size >= offsetof(wots4::HostApi, member) + sizeof((host)->member))
 
 // Passed to Wots4ModInitialize.
 struct ModContext {

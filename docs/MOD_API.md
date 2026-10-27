@@ -75,7 +75,7 @@ Contents of `ModContext`:
 | `replaceScriptText(owner, replacement)`                  | Shows another text where a talk shows one of its script texts (below)                    |
 | `showConversationMenu(owner, session, items, count, selected, context)` | Shows a menu of the Mod in the talk's choice window (below)                |
 
-`HostApi` only grows at the end, and `size` is `sizeof(wots4::HostApi)` of the ModLoader. A ModLoader older than the SDK may lack the last members, so check only the members the Mod uses: `host->size >= offsetof(wots4::HostApi, findGameText) + sizeof(host->findGameText)`. Checking `host->size >= sizeof(wots4::HostApi)` refuses older ModLoaders even when the Mod does not use the new members.
+`HostApi` only grows at the end, and `size` is `sizeof(wots4::HostApi)` of the ModLoader. A ModLoader older than the SDK may lack the last members, so check only the members the Mod uses: `host->size >= offsetof(wots4::HostApi, findGameText) + sizeof(host->findGameText)`, or `WOTS4_HOST_HAS(host, findGameText)`, which spells out the same check. Checking `host->size >= sizeof(wots4::HostApi)` refuses older ModLoaders even when the Mod does not use the new members.
 
 `findGameText` can be called at any time on the game's thread. It returns `nullptr` while the game has not loaded its texts (they are loaded before the title screen), for a number past the end of the table, and when this version of the game is not supported. The game owns the string; copy it before keeping it. Unlike `wots4::gameText` on options pages, the text is not copied by the ModLoader. Some UI texts are made to follow a name, so they may begin with a space or a particle.
 
